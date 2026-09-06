@@ -1,0 +1,2257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChainPDF // Searchable OCR Studio (Local & Offline)</title>
+
+  <!-- Modern Typography with Offline Fallbacks -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+
+  <!-- Local Offline Scripts -->
+  <script src="./pdf-lib.min.js"></script>
+  <script src="./tesseract.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #05070e;
+      --bg-card: rgba(13, 18, 30, 0.72);
+      --bg-card-solid: #0c111d;
+      --bg-card-hover: rgba(18, 25, 42, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(0, 240, 255, 0.25);
+      --border-active: #00f0ff;
+
+      --cyan: #00f0ff;
+      --cyan-dim: rgba(0, 240, 255, 0.15);
+      --teal: #28efce;
+      --purple: #7928ca;
+      --indigo: #6a59e5;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --danger: #ef4444;
+
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+
+      --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'Roboto Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+      background-image:
+        radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.12) 0%, transparent 60%),
+        radial-gradient(circle at 85% 30%, rgba(106, 89, 229, 0.10) 0%, transparent 50%),
+        radial-gradient(circle at 10% 70%, rgba(40, 239, 206, 0.08) 0%, transparent 45%),
+        radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 28px 28px;
+    }
+
+    /* Ambient background grid lighting */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1000px;
+      height: 450px;
+      background: radial-gradient(ellipse at center, rgba(0, 240, 255, 0.15), rgba(121, 40, 202, 0.08) 50%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app-container {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem 3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    /* Top Navigation Bar */
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.5rem;
+      background: var(--bg-card);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(106, 89, 229, 0.3));
+      border: 1px solid rgba(0, 240, 255, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+    }
+
+    .brand-title {
+      font-family: var(--font-heading);
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .brand-title .glow {
+      background: linear-gradient(90deg, #00f0ff, #28efce);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-tag {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--cyan);
+      padding: 2px 7px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-telemetry {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .badge-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+    }
+
+    .badge-chip.active {
+      border-color: rgba(40, 239, 206, 0.35);
+      background: rgba(40, 239, 206, 0.06);
+      color: #a7f3d0;
+    }
+
+    .beacon {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: 0 0 10px var(--teal);
+      animation: pulse-beacon 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-beacon {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.85);
+      }
+    }
+
+    /* Hero Header */
+    .hero-section {
+      text-align: center;
+      padding: 1.5rem 0 0.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0.35rem 1rem;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--cyan);
+      background: linear-gradient(90deg, rgba(0, 240, 255, 0.1), rgba(121, 40, 202, 0.1));
+      border: 1px solid rgba(0, 240, 255, 0.35);
+      border-radius: 9999px;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .hero-badge svg {
+      color: var(--cyan);
+    }
+
+    .hero-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 3.5vw, 2.75rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #ffffff 40%, #00f0ff 80%, #7928ca 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      max-width: 900px;
+    }
+
+    .hero-subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      line-height: 1.6;
+    }
+
+    /* Main Cockpit Layout */
+    .cockpit-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    @media (max-width: 1080px) {
+      .cockpit-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Glass Panels */
+    .glass-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 1.5rem;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.25s ease;
+    }
+
+    .glass-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.4), transparent);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .card-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .card-title-icon {
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+    }
+
+    .card-title {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+
+    .card-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    /* Drop Zone */
+    .dropzone-container {
+      border: 2px dashed rgba(0, 240, 255, 0.3);
+      background: rgba(0, 240, 255, 0.02);
+      border-radius: 14px;
+      padding: 1.5rem 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .dropzone-container:hover,
+    .dropzone-container.dragover {
+      border-color: var(--cyan);
+      background: rgba(0, 240, 255, 0.08);
+      box-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
+    }
+
+    .dropzone-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 0.75rem;
+      border-radius: 12px;
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyan);
+      transition: transform 0.2s ease;
+    }
+
+    .dropzone-container:hover .dropzone-icon {
+      transform: translateY(-2px) scale(1.05);
+    }
+
+    .dropzone-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: #fff;
+    }
+
+    .dropzone-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .dropzone-actions {
+      display: flex;
+      gap: 0.65rem;
+      justify-content: center;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-main);
+      padding: 0.5rem 0.95rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.25);
+      color: #fff;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    /* Selected Queue Bar */
+    .file-queue-bar {
+      display: none;
+      margin-top: 0.85rem;
+      padding: 0.75rem 1rem;
+      background: rgba(40, 239, 206, 0.05);
+      border: 1px solid rgba(40, 239, 206, 0.2);
+      border-radius: 10px;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+    }
+
+    .queue-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #6ee7b7;
+      font-weight: 500;
+    }
+
+    .queue-clear-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color 0.2s;
+    }
+
+    .queue-clear-btn:hover {
+      color: var(--danger);
+    }
+
+    /* Configuration Controls */
+    .form-group-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-label span.badge-small {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.1);
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+    }
+
+    .custom-select-wrap {
+      position: relative;
+    }
+
+    select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background-color: rgba(9, 14, 26, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      font-family: var(--font-body);
+      outline: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+    }
+
+    select option {
+      background-color: #0c111d;
+      color: #fff;
+      padding: 0.5rem;
+    }
+
+    .custom-select-wrap::after {
+      content: '▾';
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+      font-size: 0.85rem;
+    }
+
+    /* Glowing Primary Action Button */
+    .btn-glow-primary {
+      width: 100%;
+      margin-top: 1.25rem;
+      padding: 0.95rem 1.5rem;
+      background: linear-gradient(135deg, #00f0ff 0%, #28efce 50%, #6a59e5 100%);
+      border: none;
+      border-radius: 12px;
+      color: #040812;
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.65rem;
+      box-shadow: 0 0 25px rgba(0, 240, 255, 0.35), 0 4px 12px rgba(0, 0, 0, 0.5);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-glow-primary::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+      transition: left 0.6s ease;
+    }
+
+    .btn-glow-primary:hover:not(:disabled)::before {
+      left: 100%;
+    }
+
+    .btn-glow-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.55), 0 8px 20px rgba(0, 0, 0, 0.6);
+      color: #000;
+    }
+
+    .btn-glow-primary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-dim);
+    }
+
+    /* RIGHT COLUMN: Live Processing Monitor */
+    .monitor-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* Top HUD / Viewport Controls */
+    .hud-controls-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .hud-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0.35rem 0.85rem;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--cyan);
+    }
+
+    .hud-status-badge.processing {
+      background: rgba(40, 239, 206, 0.15);
+      border-color: var(--teal);
+      color: #6ee7b7;
+    }
+
+    .hud-status-badge.completed {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: var(--green);
+      color: #34d399;
+    }
+
+    .view-toggle-group {
+      display: flex;
+      background: rgba(9, 14, 26, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .view-toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 7px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+    }
+
+    .view-toggle-btn.active {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      font-weight: 600;
+    }
+
+    /* Live Preview Viewport Card */
+    .preview-viewport-card {
+      background: #020409;
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 16px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9), 0 10px 30px rgba(0, 0, 0, 0.5);
+      min-height: 380px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Tech Corner Brackets */
+    .corner-bracket {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-color: var(--cyan);
+      border-style: solid;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .corner-tl {
+      top: 8px;
+      left: 8px;
+      border-width: 2px 0 0 2px;
+    }
+
+    .corner-tr {
+      top: 8px;
+      right: 8px;
+      border-width: 2px 2px 0 0;
+    }
+
+    .corner-bl {
+      bottom: 8px;
+      left: 8px;
+      border-width: 0 0 2px 2px;
+    }
+
+    .corner-br {
+      bottom: 8px;
+      right: 8px;
+      border-width: 0 2px 2px 0;
+    }
+
+    /* Viewport Stage */
+    .viewport-stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      min-height: 360px;
+      background-image:
+        linear-gradient(rgba(0, 240, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.04) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    /* Live Canvas / Image Displays */
+    #liveCanvas,
+    #ocrPreviewCanvas {
+      max-width: 100%;
+      max-height: 480px;
+      object-fit: contain;
+      border-radius: 6px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+      transition: opacity 0.2s ease;
+      display: none;
+    }
+
+    #liveCanvas.visible,
+    #ocrPreviewCanvas.visible {
+      display: block;
+    }
+
+    /* Standby Empty State */
+    .viewport-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      color: var(--text-dim);
+      padding: 2.5rem 1rem;
+      text-align: center;
+    }
+
+    .reticle-container {
+      width: 76px;
+      height: 76px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .reticle-ring {
+      position: absolute;
+      inset: 0;
+      border: 1px dashed rgba(0, 240, 255, 0.35);
+      border-radius: 50%;
+      animation: rotate-reticle 16s linear infinite;
+    }
+
+    .reticle-inner {
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(0, 240, 255, 0.5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyan);
+    }
+
+    @keyframes rotate-reticle {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Laser Scanline for Neural OCR Scanning */
+    .scanline-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent 0%, #00f0ff 50%, transparent 100%);
+      box-shadow: 0 0 16px #00f0ff, 0 0 30px rgba(0, 240, 255, 0.8);
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      animation: scan-vertical 2s ease-in-out infinite alternate;
+    }
+
+    .scanline-bar.active {
+      display: block;
+    }
+
+    @keyframes scan-vertical {
+      0% {
+        top: 4%;
+      }
+
+      100% {
+        top: 94%;
+      }
+    }
+
+    /* Real-time Telemetry Data HUD */
+    .viewport-hud-bar {
+      background: rgba(8, 12, 22, 0.95);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 0.65rem 1.25rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.75rem;
+      z-index: 6;
+    }
+
+    .hud-metric {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .hud-metric-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .hud-metric-value {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hud-metric-value.cyan {
+      color: var(--cyan);
+    }
+
+    .hud-metric-value.teal {
+      color: var(--teal);
+    }
+
+    /* Telemetry Progress Box */
+    .progress-cockpit {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      background: rgba(9, 14, 26, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.15rem;
+    }
+
+    .progress-top-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    .progress-step-text {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .progress-step-text .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(0, 240, 255, 0.2);
+      border-top-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    .progress-step-text .spinner.active {
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-percentage {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 9999px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00f0ff 0%, #28efce 50%, #6a59e5 100%);
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.6);
+      border-radius: 9999px;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Terminal Console Log */
+    .terminal-console {
+      background: #020409;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .terminal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .terminal-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+    }
+
+    .terminal-clear-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      cursor: pointer;
+    }
+
+    .terminal-clear-btn:hover {
+      color: var(--text-main);
+    }
+
+    .terminal-body {
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      line-height: 1.5;
+      color: #94a3b8;
+      height: 110px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .terminal-body::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .terminal-body::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .terminal-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .log-time {
+      color: var(--text-dim);
+    }
+
+    .log-tag-ocr {
+      color: var(--cyan);
+    }
+
+    .log-tag-crop {
+      color: #a78bfa;
+    }
+
+    .log-tag-done {
+      color: var(--teal);
+    }
+
+    .log-tag-err {
+      color: var(--danger);
+    }
+
+    /* Footer Note */
+    .app-footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      padding-top: 1rem;
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+    }
+
+    .app-footer span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="app-container">
+
+    <!-- Navigation Header (ChainGPT Aesthetic) -->
+    <header class="navbar">
+      <a href="#" class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" stroke="#00f0ff"></polygon>
+            <polyline points="2 17 12 22 22 17" stroke="#28efce"></polyline>
+            <polyline points="2 12 12 17 22 12" stroke="#6a59e5"></polyline>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <span>CHAIN<span class="glow">PDF</span></span>
+          <span class="brand-tag">AI OCR STUDIO</span>
+        </div>
+      </a>
+
+      <div class="nav-telemetry">
+        <div class="badge-chip active">
+          <div class="beacon"></div>
+          <span>SIMD WASM ENGINE</span>
+        </div>
+        <div class="badge-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>100% AIR-GAPPED & LOCAL</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero Banner -->
+    <section class="hero-section">
+      <div class="hero-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        <span>Offline Document Processing</span>
+      </div>
+      <h1 class="hero-title">Turn Images into Searchable OCR PDFs</h1>
+      <p class="hero-subtitle">
+        Powered by local Tesseract SIMD neural OCR with adaptive ink-contrast isolation,
+        auto-cropping, and multi-column alignment.
+      </p>
+    </section>
+
+    <!-- Main Cockpit Layout -->
+    <main class="cockpit-grid">
+
+      <!-- LEFT PANEL: Configuration & Upload -->
+      <section class="glass-card">
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <div class="card-title-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+            </div>
+            <div>
+              <h2 class="card-title">Batch Ingestion</h2>
+              <div class="card-subtitle">Select image folder or files for processing</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <div class="dropzone-container" id="dropZone">
+          <div class="dropzone-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <div class="dropzone-title">Drop Folder or Images Here</div>
+          <div class="dropzone-text">Supports JPG, PNG, WEBP, BMP (sorted naturally)</div>
+
+          <div class="dropzone-actions">
+            <button type="button" class="btn-secondary" id="chooseFolderBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              Choose Folder
+            </button>
+            <button type="button" class="btn-secondary" id="chooseFilesBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              Select Files
+            </button>
+          </div>
+
+          <!-- Hidden Inputs for Folder & Multi-Files -->
+          <input type="file" id="folderInput" webkitdirectory directory multiple accept="image/*">
+          <input type="file" id="filesInput" multiple accept="image/*">
+        </div>
+
+        <!-- File Queue Bar -->
+        <div class="file-queue-bar" id="queueBar">
+          <div class="queue-info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span id="queueCountText">0 Images Ready</span>
+          </div>
+          <button type="button" class="queue-clear-btn" id="clearQueueBtn">Clear</button>
+        </div>
+
+        <!-- Parameters & Controls -->
+        <div class="form-group-list">
+          <div class="form-group">
+            <label class="form-label" for="cropSelect">
+              <span>Border Auto-Crop</span>
+              <span class="badge-small">EDGE DETECTION</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="cropSelect">
+                <option value="enabled" selected>Enabled (Strict Corner-to-Corner Line Only)</option>
+                <option value="disabled">Disabled (Keep Original Boundaries)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="resSelect">
+              <span>Target Resolution</span>
+              <span class="badge-small">OPTIMIZATION</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="resSelect">
+                <option value="720">720p (1280 × 720 - Compact)</option>
+                <option value="1080" selected>1080p (1920 × 1080 - Recommended)</option>
+                <option value="4k">4K (3840 × 2160 - Maximum Detail)</option>
+                <option value="original">Original (No Resizing)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="langSelect">
+              <span>OCR Language</span>
+              <span class="badge-small">TRAINEDDATA</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="langSelect">
+                <option value="eng" selected>English (eng)</option>
+                <option value="spa">Spanish (spa - requires tessdata/spa.traineddata.gz)</option>
+                <option value="fra">French (fra - requires tessdata/fra.traineddata.gz)</option>
+                <option value="deu">German (deu - requires tessdata/deu.traineddata.gz)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Initiate Action Button -->
+        <button id="processBtn" class="btn-glow-primary" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span id="processBtnText">INITIATE OCR CONVERSION</span>
+        </button>
+
+      </section>
+
+      <!-- RIGHT PANEL: Live Neural Processing Monitor & Preview -->
+      <section class="glass-card monitor-panel">
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <div class="card-title-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <div>
+              <h2 class="card-title">Live Neural Processing Monitor</h2>
+              <div class="card-subtitle">Real-time computer vision frame inspection</div>
+            </div>
+          </div>
+
+          <div class="hud-controls-bar">
+            <div class="hud-status-badge" id="hudStatusBadge">
+              <div class="beacon" id="hudBeacon"></div>
+              <span id="hudStatusText">STANDBY</span>
+            </div>
+
+            <div class="view-toggle-group">
+              <button type="button" class="view-toggle-btn active" id="viewVisualBtn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                Visual Frame
+              </button>
+              <button type="button" class="view-toggle-btn" id="viewOcrBtn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 12h20"></path>
+                  <path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6"></path>
+                  <path d="M12 2v20"></path>
+                </svg>
+                OCR Ink Map
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Preview Viewport Card -->
+        <div class="preview-viewport-card">
+          <!-- Tech Corner Accents -->
+          <div class="corner-bracket corner-tl"></div>
+          <div class="corner-bracket corner-tr"></div>
+          <div class="corner-bracket corner-bl"></div>
+          <div class="corner-bracket corner-br"></div>
+
+          <!-- Laser Scanline Animation Bar -->
+          <div class="scanline-bar" id="scanlineBar"></div>
+
+          <!-- Stage Viewport -->
+          <div class="viewport-stage" id="viewportStage">
+            <!-- Standby Empty State -->
+            <div class="viewport-empty" id="emptyState">
+              <div class="reticle-container">
+                <div class="reticle-ring"></div>
+                <div class="reticle-inner">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                </div>
+              </div>
+              <div>
+                <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Awaiting Image Stream</div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Load images or initiate conversion to begin live
+                  frame inspection</div>
+              </div>
+            </div>
+
+            <!-- Live Visual Canvas -->
+            <canvas id="liveCanvas"></canvas>
+
+            <!-- Live OCR Ink-Contrast Filter Canvas -->
+            <canvas id="ocrPreviewCanvas"></canvas>
+          </div>
+
+          <!-- Live Telemetry Data HUD -->
+          <div class="viewport-hud-bar">
+            <div class="hud-metric">
+              <span class="hud-metric-label">PAGE PROGRESS</span>
+              <span class="hud-metric-value cyan" id="hudMetricPage">-- / --</span>
+            </div>
+            <div class="hud-metric">
+              <span class="hud-metric-label">ACTIVE FILE</span>
+              <span class="hud-metric-value" id="hudMetricFile">None</span>
+            </div>
+            <div class="hud-metric">
+              <span class="hud-metric-label">OUTPUT RESOLUTION</span>
+              <span class="hud-metric-value" id="hudMetricDims">-- × --</span>
+            </div>
+            <div class="hud-metric">
+              <span class="hud-metric-label">WORDS DETECTED</span>
+              <span class="hud-metric-value teal" id="hudMetricWords">0</span>
+            </div>
+            <div class="hud-metric">
+              <span class="hud-metric-label">AUTO-CROP STATUS</span>
+              <span class="hud-metric-value" id="hudMetricCrop">Idle</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Progress Cockpit -->
+        <div class="progress-cockpit">
+          <div class="progress-top-info">
+            <div class="progress-step-text">
+              <div class="spinner" id="progressSpinner"></div>
+              <span id="statusLabel">Ready for Ingestion</span>
+            </div>
+            <span class="progress-percentage" id="percentLabel">0%</span>
+          </div>
+
+          <div class="progress-track">
+            <div class="progress-fill" id="progressBar"></div>
+          </div>
+        </div>
+
+        <!-- Terminal Console Box -->
+        <div class="terminal-console">
+          <div class="terminal-header">
+            <div class="terminal-title">
+              <div class="terminal-dot"></div>
+              <span>ENGINE EXECUTION TERMINAL</span>
+            </div>
+            <button type="button" class="terminal-clear-btn" id="clearLogBtn">CLEAR</button>
+          </div>
+          <div class="terminal-body" id="logBox"></div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <footer class="app-footer">
+      <span>🔒 100% Client-Side Neural Execution</span>
+      <span>⚡ SIMD LSTM WebAssembly Active</span>
+      <span>📄 Searchable Hidden Font Injection</span>
+    </footer>
+
+  </div>
+
+  <script>
+    // DOM Elements
+    const dropZone = document.getElementById('dropZone');
+    const folderInput = document.getElementById('folderInput');
+    const filesInput = document.getElementById('filesInput');
+    const chooseFolderBtn = document.getElementById('chooseFolderBtn');
+    const chooseFilesBtn = document.getElementById('chooseFilesBtn');
+    const queueBar = document.getElementById('queueBar');
+    const queueCountText = document.getElementById('queueCountText');
+    const clearQueueBtn = document.getElementById('clearQueueBtn');
+
+    const cropSelect = document.getElementById('cropSelect');
+    const resSelect = document.getElementById('resSelect');
+    const langSelect = document.getElementById('langSelect');
+    const processBtn = document.getElementById('processBtn');
+    const processBtnText = document.getElementById('processBtnText');
+
+    const hudStatusBadge = document.getElementById('hudStatusBadge');
+    const hudStatusText = document.getElementById('hudStatusText');
+    const hudBeacon = document.getElementById('hudBeacon');
+    const viewVisualBtn = document.getElementById('viewVisualBtn');
+    const viewOcrBtn = document.getElementById('viewOcrBtn');
+
+    const emptyState = document.getElementById('emptyState');
+    const liveCanvas = document.getElementById('liveCanvas');
+    const ocrPreviewCanvas = document.getElementById('ocrPreviewCanvas');
+    const scanlineBar = document.getElementById('scanlineBar');
+
+    const hudMetricPage = document.getElementById('hudMetricPage');
+    const hudMetricFile = document.getElementById('hudMetricFile');
+    const hudMetricDims = document.getElementById('hudMetricDims');
+    const hudMetricWords = document.getElementById('hudMetricWords');
+    const hudMetricCrop = document.getElementById('hudMetricCrop');
+
+    const statusLabel = document.getElementById('statusLabel');
+    const percentLabel = document.getElementById('percentLabel');
+    const progressBar = document.getElementById('progressBar');
+    const progressSpinner = document.getElementById('progressSpinner');
+    const logBox = document.getElementById('logBox');
+    const clearLogBtn = document.getElementById('clearLogBtn');
+
+    let validImageFiles = [];
+    let currentActiveMode = 'visual'; // 'visual' | 'ocr'
+
+    // View Switcher (Visual Page vs OCR Ink Map)
+    viewVisualBtn.addEventListener('click', () => {
+      currentActiveMode = 'visual';
+      viewVisualBtn.classList.add('active');
+      viewOcrBtn.classList.remove('active');
+      updateCanvasVisibility();
+    });
+
+    viewOcrBtn.addEventListener('click', () => {
+      currentActiveMode = 'ocr';
+      viewOcrBtn.classList.add('active');
+      viewVisualBtn.classList.remove('active');
+      updateCanvasVisibility();
+    });
+
+    function updateCanvasVisibility() {
+      if (emptyState.style.display !== 'none') return;
+      if (currentActiveMode === 'visual') {
+        liveCanvas.classList.add('visible');
+        ocrPreviewCanvas.classList.remove('visible');
+      } else {
+        ocrPreviewCanvas.classList.add('visible');
+        liveCanvas.classList.remove('visible');
+      }
+    }
+
+    // Logger with ChainGPT color tags
+    function log(msg, tag = 'INFO') {
+      const time = new Date().toLocaleTimeString();
+      let tagColorClass = 'log-tag-ocr';
+      if (tag === 'CROP') tagColorClass = 'log-tag-crop';
+      if (tag === 'DONE' || tag === 'SUCCESS') tagColorClass = 'log-tag-done';
+      if (tag === 'ERROR') tagColorClass = 'log-tag-err';
+
+      const line = document.createElement('div');
+      line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${tagColorClass}">[${tag}]</span> ${escapeHtml(msg)}`;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    clearLogBtn.addEventListener('click', () => {
+      logBox.innerHTML = '';
+    });
+
+    function updateProgress(percentage, text) {
+      const val = Math.min(100, Math.max(0, Math.round(percentage)));
+      progressBar.style.width = `${val}%`;
+      percentLabel.textContent = `${val}%`;
+      if (text) statusLabel.textContent = text;
+    }
+
+    function setEngineState(state, label) {
+      hudStatusBadge.className = 'hud-status-badge';
+      if (state === 'processing') {
+        hudStatusBadge.classList.add('processing');
+        hudBeacon.style.background = '#00f0ff';
+        hudBeacon.style.boxShadow = '0 0 10px #00f0ff';
+        progressSpinner.classList.add('active');
+      } else if (state === 'completed') {
+        hudStatusBadge.classList.add('completed');
+        hudBeacon.style.background = '#10b981';
+        hudBeacon.style.boxShadow = '0 0 10px #10b981';
+        progressSpinner.classList.remove('active');
+      } else {
+        hudBeacon.style.background = '#28efce';
+        hudBeacon.style.boxShadow = '0 0 10px #28efce';
+        progressSpinner.classList.remove('active');
+      }
+      hudStatusText.textContent = label || state.toUpperCase();
+    }
+
+    // File Picker Hooks
+    chooseFolderBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      folderInput.click();
+    });
+
+    chooseFilesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      filesInput.click();
+    });
+
+    dropZone.addEventListener('click', () => {
+      chooseFolderBtn.click();
+    });
+
+    // Drag and Drop
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+      });
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+      const dt = e.dataTransfer;
+      let files = [];
+      if (dt.items) {
+        files = await scanDataTransferItems(dt.items);
+      } else if (dt.files) {
+        files = Array.from(dt.files);
+      }
+      handleLoadedFiles(files);
+    });
+
+    folderInput.addEventListener('change', (e) => {
+      handleLoadedFiles(Array.from(e.target.files));
+    });
+
+    filesInput.addEventListener('change', (e) => {
+      handleLoadedFiles(Array.from(e.target.files));
+    });
+
+    // Recursive directory scanner for dropped folders
+    async function scanDataTransferItems(items) {
+      const fileList = [];
+      const queue = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+          if (entry) {
+            queue.push(traverseEntry(entry));
+          } else {
+            const file = item.getAsFile();
+            if (file) fileList.push(file);
+          }
+        }
+      }
+
+      const results = await Promise.all(queue);
+      for (const res of results) {
+        if (Array.isArray(res)) fileList.push(...res);
+      }
+      return fileList;
+    }
+
+    function traverseEntry(entry) {
+      return new Promise((resolve) => {
+        if (entry.isFile) {
+          entry.file(file => resolve([file]), () => resolve([]));
+        } else if (entry.isDirectory) {
+          const dirReader = entry.createReader();
+          dirReader.readEntries(async entries => {
+            const subPromises = entries.map(e => traverseEntry(e));
+            const subResults = await Promise.all(subPromises);
+            resolve(subResults.flat());
+          }, () => resolve([]));
+        } else {
+          resolve([]);
+        }
+      });
+    }
+
+    // Handle and sort ingested images
+    async function handleLoadedFiles(files) {
+      validImageFiles = files.filter(file => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext) || file.type.startsWith('image/');
+      });
+
+      validImageFiles.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      );
+
+      if (validImageFiles.length > 0) {
+        processBtn.disabled = false;
+        processBtnText.textContent = `PROCESS ${validImageFiles.length} IMAGE(S)`;
+        queueBar.style.display = 'flex';
+        queueCountText.textContent = `${validImageFiles.length} Images Queued`;
+        log(`Ingested ${validImageFiles.length} image files into queue.`, 'LOAD');
+
+        // Preview the first image immediately in standby mode
+        try {
+          const firstImg = await fileToImage(validImageFiles[0]);
+          renderVisualPreview(firstImg);
+          hudMetricPage.textContent = `01 / ${String(validImageFiles.length).padStart(2, '0')}`;
+          hudMetricFile.textContent = validImageFiles[0].name;
+          hudMetricDims.textContent = `${firstImg.naturalWidth} × ${firstImg.naturalHeight} px`;
+          hudMetricWords.textContent = 'Standby';
+          hudMetricCrop.textContent = 'Ready';
+          statusLabel.textContent = `${validImageFiles.length} images staged for OCR`;
+        } catch (err) {
+          console.warn('Initial preview error:', err);
+        }
+      } else {
+        resetQueue();
+        alert('No valid image files (JPG, PNG, WEBP, BMP) found.');
+      }
+    }
+
+    clearQueueBtn.addEventListener('click', () => {
+      resetQueue();
+      log('Image queue cleared.', 'INFO');
+    });
+
+    function resetQueue() {
+      validImageFiles = [];
+      folderInput.value = '';
+      filesInput.value = '';
+      processBtn.disabled = true;
+      processBtnText.textContent = 'INITIATE OCR CONVERSION';
+      queueBar.style.display = 'none';
+      emptyState.style.display = 'flex';
+      liveCanvas.classList.remove('visible');
+      ocrPreviewCanvas.classList.remove('visible');
+      hudMetricPage.textContent = '-- / --';
+      hudMetricFile.textContent = 'None';
+      hudMetricDims.textContent = '-- × --';
+      hudMetricWords.textContent = '0';
+      hudMetricCrop.textContent = 'Idle';
+      setEngineState('standby', 'STANDBY');
+      updateProgress(0, 'Ready for Ingestion');
+    }
+
+    function fileToImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(img);
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    // Draw image to Live Visual Canvas
+    function renderVisualPreview(img, crop = null, targetWidth = null, targetHeight = null) {
+      emptyState.style.display = 'none';
+      const cw = targetWidth || (crop ? crop.w : img.naturalWidth);
+      const ch = targetHeight || (crop ? crop.h : img.naturalHeight);
+
+      liveCanvas.width = cw;
+      liveCanvas.height = ch;
+      const ctx = liveCanvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+
+      if (crop) {
+        ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
+      } else {
+        ctx.drawImage(img, 0, 0, cw, ch);
+      }
+
+      updateCanvasVisibility();
+    }
+
+    // Draw to OCR Ink Map Preview Canvas
+    function renderOcrPreview(sourceCanvas) {
+      ocrPreviewCanvas.width = sourceCanvas.width;
+      ocrPreviewCanvas.height = sourceCanvas.height;
+      const ctx = ocrPreviewCanvas.getContext('2d');
+      ctx.drawImage(sourceCanvas, 0, 0);
+      updateCanvasVisibility();
+    }
+
+    // Auto-Crop Detection Algorithm
+    function detectBorderCrop(img) {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (w < 80 || h < 80) return { x: 0, y: 0, w, h };
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+
+      const data = ctx.getImageData(0, 0, w, h).data;
+
+      function getPixel(x, y) {
+        const idx = (y * w + x) * 4;
+        return [data[idx], data[idx + 1], data[idx + 2]];
+      }
+
+      function getEdgeBaseline(isRow, index, maxLen) {
+        const step = Math.max(1, Math.floor(maxLen / 100));
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+
+        for (let pos = 0; pos < maxLen; pos += step) {
+          const p = isRow ? getPixel(pos, index) : getPixel(index, pos);
+          rSum += p[0]; gSum += p[1]; bSum += p[2];
+          count++;
+        }
+
+        const avgR = rSum / count;
+        const avgG = gSum / count;
+        const avgB = bSum / count;
+        const isNeutral = (Math.abs(avgR - avgG) < 30 && Math.abs(avgG - avgB) < 30 && Math.abs(avgR - avgB) < 30);
+
+        let devSum = 0;
+        for (let pos = 0; pos < maxLen; pos += step) {
+          const p = isRow ? getPixel(pos, index) : getPixel(index, pos);
+          devSum += Math.abs(p[0] - avgR) + Math.abs(p[1] - avgG) + Math.abs(p[2] - avgB);
+        }
+        const isUniform = (devSum / count) < 35;
+
+        return { avgR, avgG, avgB, isValidBorder: isNeutral && isUniform };
+      }
+
+      function isCornerToCornerLine(isRow, index, maxLen, baseR, baseG, baseB) {
+        const step = maxLen > 2500 ? 2 : 1;
+        let linePixels = 0, total = 0, currentGap = 0, maxGap = 0;
+        let startFound = false, endFound = false;
+        const cornerMargin = Math.floor(maxLen * 0.05);
+
+        for (let pos = 0; pos < maxLen; pos += step) {
+          total++;
+          const [r, g, b] = isRow ? getPixel(pos, index) : getPixel(index, pos);
+          const diff = Math.abs(r - baseR) + Math.abs(g - baseG) + Math.abs(b - baseB);
+          const isLinePixel = diff > 45;
+
+          if (isLinePixel) {
+            linePixels++;
+            currentGap = 0;
+            if (pos <= cornerMargin) startFound = true;
+            if (pos >= maxLen - cornerMargin) endFound = true;
+          } else {
+            currentGap += step;
+            if (currentGap > maxGap) maxGap = currentGap;
+          }
+        }
+
+        const coverage = linePixels / total;
+        const maxAllowedGap = Math.max(10, Math.floor(maxLen * 0.05));
+        return coverage >= 0.92 && startFound && endFound && maxGap <= maxAllowedGap;
+      }
+
+      const maxScanY = Math.floor(h * 0.25);
+      const maxScanX = Math.floor(w * 0.25);
+      let top = 0, bottom = h, left = 0, right = w;
+
+      const topBase = getEdgeBaseline(true, 0, w);
+      if (topBase.isValidBorder) {
+        for (let y = 1; y < maxScanY; y++) {
+          if (isCornerToCornerLine(true, y, w, topBase.avgR, topBase.avgG, topBase.avgB)) {
+            top = y + 1;
+            break;
+          }
+        }
+      }
+
+      const bottomBase = getEdgeBaseline(true, h - 1, w);
+      if (bottomBase.isValidBorder) {
+        for (let y = h - 2; y > h - maxScanY; y--) {
+          if (isCornerToCornerLine(true, y, w, bottomBase.avgR, bottomBase.avgG, bottomBase.avgB)) {
+            bottom = y;
+            break;
+          }
+        }
+      }
+
+      const leftBase = getEdgeBaseline(false, 0, h);
+      if (leftBase.isValidBorder) {
+        for (let x = 1; x < maxScanX; x++) {
+          if (isCornerToCornerLine(false, x, h, leftBase.avgR, leftBase.avgG, leftBase.avgB)) {
+            left = x + 1;
+            break;
+          }
+        }
+      }
+
+      const rightBase = getEdgeBaseline(false, w - 1, h);
+      if (rightBase.isValidBorder) {
+        for (let x = w - 2; x > w - maxScanX; x--) {
+          if (isCornerToCornerLine(false, x, h, rightBase.avgR, rightBase.avgG, rightBase.avgB)) {
+            right = x;
+            break;
+          }
+        }
+      }
+
+      return { x: left, y: top, w: Math.max(50, right - left), h: Math.max(50, bottom - top) };
+    }
+
+    function getTargetDimensions(origW, origH, targetRes) {
+      if (targetRes === 'original') return { width: origW, height: origH };
+
+      const limits = {
+        '720': { max: 1280, min: 720 },
+        '1080': { max: 1920, min: 1080 },
+        '4k': { max: 3840, min: 2160 }
+      };
+
+      const config = limits[targetRes];
+      const isLandscape = origW >= origH;
+      const boundW = isLandscape ? config.max : config.min;
+      const boundH = isLandscape ? config.min : config.max;
+      const scale = Math.min(1, boundW / origW, boundH / origH);
+
+      return {
+        width: Math.max(1, Math.round(origW * scale)),
+        height: Math.max(1, Math.round(origH * scale))
+      };
+    }
+
+    // Pre-OCR ink-contrast filter: turns colored text into solid dark pixels and cleans tinted backgrounds
+    function preprocessForOcr(canvas) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imgData.data;
+
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+
+        const minChannel = Math.min(r, g, b);
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        let val = minChannel * 0.75 + luminance * 0.25;
+
+        if (val > 195) {
+          val = 255;
+        } else if (val < 165) {
+          val = Math.max(0, val * 0.55);
+        }
+
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    // Sanitizes common OCR character artifacts
+    function cleanOcrText(rawText) {
+      if (!rawText) return '';
+      let text = rawText;
+
+      text = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+      text = text.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
+      text = text.replace(/[\u2013\u2014]/g, '-');
+      text = text.replace(/([a-zA-Z0-9])\|/g, '$1l');
+      text = text.replace(/\|([a-zA-Z0-9])/g, 'l$1');
+
+      return text.replace(/[^\x20-\x7E]/g, '').trim();
+    }
+
+    // Reassembles words split by display font kerning
+    function stitchOcrWords(words) {
+      if (words.length <= 1) return words;
+
+      const sorted = [...words].sort((a, b) => a.bbox.x0 - b.bbox.x0);
+      const stitched = [];
+
+      let curr = {
+        text: cleanOcrText(sorted[0].text),
+        bbox: { ...sorted[0].bbox }
+      };
+
+      for (let i = 1; i < sorted.length; i++) {
+        const next = sorted[i];
+        const nextText = cleanOcrText(next.text);
+        if (!nextText) continue;
+
+        const currH = Math.max(1, curr.bbox.y1 - curr.bbox.y0);
+        const nextH = Math.max(1, next.bbox.y1 - next.bbox.y0);
+        const avgH = (currH + nextH) / 2;
+        const gap = next.bbox.x0 - curr.bbox.x1;
+
+        const isPunctuation = /^[.,;:!?')\]}"]/.test(nextText);
+        const spaceThreshold = isPunctuation ? (avgH * 0.35) : (avgH * 0.20);
+
+        if (gap < spaceThreshold) {
+          curr.text += nextText;
+          curr.bbox.x1 = Math.max(curr.bbox.x1, next.bbox.x1);
+          curr.bbox.y0 = Math.min(curr.bbox.y0, next.bbox.y0);
+          curr.bbox.y1 = Math.max(curr.bbox.y1, next.bbox.y1);
+        } else {
+          if (curr.text) stitched.push(curr);
+          curr = {
+            text: nextText,
+            bbox: { ...next.bbox }
+          };
+        }
+      }
+
+      if (curr.text) stitched.push(curr);
+      return stitched;
+    }
+
+    // Groups lines strictly column-by-column
+    function separateColumns(lines, pageWidth) {
+      if (lines.length <= 1) return lines;
+
+      const contentLines = [];
+      const banners = [];
+
+      for (const l of lines) {
+        if ((l.x1 - l.x0) > pageWidth * 0.65) {
+          banners.push(l);
+        } else {
+          contentLines.push(l);
+        }
+      }
+
+      if (contentLines.length === 0) {
+        return lines.sort((a, b) => a.y0 - b.y0);
+      }
+
+      const binSize = 4;
+      const numBins = Math.ceil(pageWidth / binSize);
+      const occupancy = new Int32Array(numBins);
+
+      for (const l of contentLines) {
+        const startBin = Math.max(0, Math.floor(l.x0 / binSize));
+        const endBin = Math.min(numBins - 1, Math.floor(l.x1 / binSize));
+        for (let b = startBin; b <= endBin; b++) occupancy[b]++;
+      }
+
+      const minX = Math.min(...contentLines.map(l => l.x0));
+      const maxX = Math.max(...contentLines.map(l => l.x1));
+      const startBin = Math.floor(minX / binSize);
+      const endBin = Math.floor(maxX / binSize);
+
+      const gutters = [];
+      let inGutter = false;
+      let gutterStart = 0;
+
+      for (let b = startBin; b <= endBin; b++) {
+        if (occupancy[b] === 0) {
+          if (!inGutter) {
+            inGutter = true;
+            gutterStart = b;
+          }
+        } else {
+          if (inGutter) {
+            inGutter = false;
+            const gutterW = (b - gutterStart) * binSize;
+            if (gutterW >= 16) {
+              gutters.push(((gutterStart + b) / 2) * binSize);
+            }
+          }
+        }
+      }
+
+      if (gutters.length === 0) {
+        return lines.sort((a, b) => {
+          const yDiff = a.y0 - b.y0;
+          if (Math.abs(yDiff) > Math.min(a.lineH, b.lineH) * 0.4) return yDiff;
+          return a.x0 - b.x0;
+        });
+      }
+
+      const splitX = gutters.sort((a, b) => a - b);
+      const columns = Array.from({ length: splitX.length + 1 }, () => []);
+
+      for (const l of contentLines) {
+        const midX = (l.x0 + l.x1) / 2;
+        let colIdx = splitX.length;
+        for (let i = 0; i < splitX.length; i++) {
+          if (midX < splitX[i]) {
+            colIdx = i;
+            break;
+          }
+        }
+        columns[colIdx].push(l);
+      }
+
+      for (const col of columns) {
+        col.sort((a, b) => a.y0 - b.y0);
+      }
+
+      const minY = Math.min(...contentLines.map(l => l.y0));
+      const maxY = Math.max(...contentLines.map(l => l.y1));
+
+      const topBanners = banners.filter(b => b.y1 <= minY).sort((a, b) => a.y0 - b.y0);
+      const bottomBanners = banners.filter(b => b.y0 >= maxY).sort((a, b) => a.y0 - b.y0);
+      const midBanners = banners.filter(b => b.y1 > minY && b.y0 < maxY).sort((a, b) => a.y0 - b.y0);
+
+      return [...topBanners, ...columns.flat(), ...midBanners, ...bottomBanners];
+    }
+
+    function buildLineObject(words, pageHeight) {
+      const x0 = Math.min(...words.map(w => w.bbox.x0));
+      const x1 = Math.max(...words.map(w => w.bbox.x1));
+      const y0 = Math.min(...words.map(w => w.bbox.y0));
+      const y1 = Math.max(...words.map(w => w.bbox.y1));
+      const lineH = Math.max(1, y1 - y0);
+      const baselineY = (pageHeight - y1) + (lineH * 0.21);
+      return { words, x0, x1, y0, y1, lineH, baselineY };
+    }
+
+    // Primary OCR Pipeline Execution
+    processBtn.addEventListener('click', async () => {
+      if (validImageFiles.length === 0) return;
+
+      processBtn.disabled = true;
+      chooseFolderBtn.disabled = true;
+      chooseFilesBtn.disabled = true;
+      clearQueueBtn.disabled = true;
+      cropSelect.disabled = true;
+      resSelect.disabled = true;
+      langSelect.disabled = true;
+
+      setEngineState('processing', 'PROCESSING');
+      logBox.innerHTML = '';
+
+      const lang = langSelect.value;
+      const targetRes = resSelect.value;
+      const autoCrop = cropSelect.value === 'enabled';
+
+      log(`Initializing local Tesseract engine [${lang}] with SIMD acceleration...`, 'INIT');
+      updateProgress(2, `Initializing Tesseract Engine [${lang}]...`);
+
+      let worker = null;
+
+      try {
+        worker = await Tesseract.createWorker(lang, 1, {
+          workerPath: './worker.min.js',
+          corePath: './tesseract-core-simd-lstm.wasm.js',
+          langPath: './tessdata',
+          cacheMethod: 'none',
+          gzip: true,
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const pageFrac = (window._currentPageIndex || 0) / validImageFiles.length;
+              const jobFrac = (m.progress || 0) / validImageFiles.length;
+              const currentPct = (pageFrac + jobFrac) * 100;
+              const pageNum = (window._currentPageIndex || 0) + 1;
+              updateProgress(currentPct, `OCR Neural Pass: Page ${pageNum} (${Math.round((m.progress || 0) * 100)}%)`);
+            }
+          }
+        });
+
+        await worker.setParameters({
+          user_defined_dpi: '300',
+          tessedit_pageseg_mode: '3',
+          preserve_interword_spaces: '0'
+        });
+
+        log('Tesseract SIMD engine ready. Initializing PDF-Lib document...', 'INIT');
+        const pdfDoc = await PDFLib.PDFDocument.create();
+        const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+
+        for (let i = 0; i < validImageFiles.length; i++) {
+          window._currentPageIndex = i;
+          const file = validImageFiles[i];
+          const pageNum = i + 1;
+          const totalPages = validImageFiles.length;
+
+          // Telemetry HUD Update
+          hudMetricPage.textContent = `${String(pageNum).padStart(2, '0')} / ${String(totalPages).padStart(2, '0')}`;
+          hudMetricFile.textContent = file.name;
+          updateProgress((i / totalPages) * 100, `Processing Page ${pageNum} of ${totalPages}...`);
+          log(`Page ${pageNum}/${totalPages}: Ingesting ${file.name}...`, 'PAGE');
+
+          // 1. Ingest Image
+          const img = await fileToImage(file);
+
+          // 2. Border Detection / Crop
+          let crop = { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+          let wasCropped = false;
+          if (autoCrop) {
+            hudMetricCrop.textContent = 'Scanning edges...';
+            crop = detectBorderCrop(img);
+            wasCropped = crop.x > 0 || crop.y > 0 || crop.w < img.naturalWidth || crop.h < img.naturalHeight;
+            if (wasCropped) {
+              hudMetricCrop.textContent = `Cropped (-${img.naturalWidth - crop.w}x-${img.naturalHeight - crop.h})`;
+              log(`Auto-crop isolated content: ${crop.w}×${crop.h} (offset: ${crop.x}, ${crop.y})`, 'CROP');
+            } else {
+              hudMetricCrop.textContent = 'Preserved (Clean)';
+            }
+          } else {
+            hudMetricCrop.textContent = 'Disabled';
+          }
+
+          // 3. Calculate target dimensions
+          const { width, height } = getTargetDimensions(crop.w, crop.h, targetRes);
+          hudMetricDims.textContent = `${width} × ${height} px`;
+
+          // 4. Render Live Visual Canvas & embed into PDF
+          renderVisualPreview(img, crop, width, height);
+
+          // Create PDF Canvas for image layer
+          const pdfCanvas = document.createElement('canvas');
+          pdfCanvas.width = width;
+          pdfCanvas.height = height;
+          const pdfCtx = pdfCanvas.getContext('2d');
+          pdfCtx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
+
+          const jpegDataUrl = pdfCanvas.toDataURL('image/jpeg', 0.85);
+          const embeddedImage = await pdfDoc.embedJpg(jpegDataUrl);
+
+          const page = pdfDoc.addPage([width, height]);
+          page.drawImage(embeddedImage, { x: 0, y: 0, width, height });
+
+          // 5. OCR Canvas with Ink-Contrast Extraction
+          const maxOcrDim = 1400;
+          let ocrW = width;
+          let ocrH = height;
+          let ocrScale = 1.0;
+
+          if (Math.max(width, height) > maxOcrDim) {
+            ocrScale = maxOcrDim / Math.max(width, height);
+            ocrW = Math.round(width * ocrScale);
+            ocrH = Math.round(height * ocrScale);
+          }
+
+          const ocrCanvas = document.createElement('canvas');
+          ocrCanvas.width = ocrW;
+          ocrCanvas.height = ocrH;
+          const ocrCtx = ocrCanvas.getContext('2d');
+          ocrCtx.imageSmoothingEnabled = true;
+          ocrCtx.imageSmoothingQuality = 'high';
+          ocrCtx.drawImage(pdfCanvas, 0, 0, ocrW, ocrH);
+
+          // Apply ink-contrast extraction
+          preprocessForOcr(ocrCanvas);
+
+          // Render OCR Ink-Contrast Live Preview
+          renderOcrPreview(ocrCanvas);
+
+          // 6. Run Neural Recognition with Laser Scanline
+          scanlineBar.classList.add('active');
+          log(`Executing SIMD neural OCR on page ${pageNum}...`, 'OCR');
+
+          const ocrResult = await worker.recognize(ocrCanvas);
+          scanlineBar.classList.remove('active');
+
+          const rawLines = ocrResult.data.lines || [];
+          const structuredLines = [];
+          const toPageScale = 1.0 / ocrScale;
+          let wordCount = 0;
+
+          for (const line of rawLines) {
+            const rawWords = (line.words || []).filter(w => {
+              const clean = cleanOcrText(w.text);
+              return clean.length > 0;
+            }).map(w => ({
+              text: w.text,
+              bbox: {
+                x0: Math.round(w.bbox.x0 * toPageScale),
+                x1: Math.round(w.bbox.x1 * toPageScale),
+                y0: Math.round(w.bbox.y0 * toPageScale),
+                y1: Math.round(w.bbox.y1 * toPageScale)
+              }
+            }));
+
+            if (rawWords.length === 0) continue;
+
+            wordCount += rawWords.length;
+            const stitchedWords = stitchOcrWords(rawWords);
+
+            let currentCluster = [stitchedWords[0]];
+
+            for (let w = 1; w < stitchedWords.length; w++) {
+              const prevWord = stitchedWords[w - 1];
+              const currWord = stitchedWords[w];
+              const gap = currWord.bbox.x0 - prevWord.bbox.x1;
+              const wordH = Math.max(prevWord.bbox.y1 - prevWord.bbox.y0, currWord.bbox.y1 - currWord.bbox.y0);
+              const splitGap = Math.max(18, wordH * 1.15);
+
+              if (gap > splitGap) {
+                structuredLines.push(buildLineObject(currentCluster, height));
+                currentCluster = [currWord];
+              } else {
+                currentCluster.push(currWord);
+              }
+            }
+
+            if (currentCluster.length > 0) {
+              structuredLines.push(buildLineObject(currentCluster, height));
+            }
+          }
+
+          hudMetricWords.textContent = `${wordCount} words`;
+          log(`Extracted ${wordCount} words across ${structuredLines.length} text segments.`, 'OCR');
+
+          // Column-first sequence ordering
+          const orderedLines = separateColumns(structuredLines, width);
+
+          // Inject calibrated invisible text layer
+          for (const line of orderedLines) {
+            const nominalSize = Math.max(4, line.lineH * 0.80);
+
+            for (const word of line.words) {
+              const cleanText = cleanOcrText(word.text);
+              if (!cleanText) continue;
+
+              const actualBoxW = word.bbox.x1 - word.bbox.x0;
+              const actualBoxH = word.bbox.y1 - word.bbox.y0;
+
+              const targetW = actualBoxW + Math.max(1, actualBoxH * 0.04);
+              const unitW = helveticaFont.widthOfTextAtSize(cleanText, 1);
+
+              let fontSize = unitW > 0 ? (targetW / unitW) : nominalSize;
+              fontSize = Math.min(Math.max(fontSize, nominalSize * 0.65), nominalSize * 1.60);
+
+              page.drawText(cleanText, {
+                x: word.bbox.x0,
+                y: line.baselineY,
+                size: fontSize,
+                font: helveticaFont,
+                opacity: 0
+              });
+            }
+          }
+
+          updateProgress(((i + 1) / validImageFiles.length) * 100);
+        }
+
+        // 7. Save and Trigger Download
+        log('Assembling final searchable PDF container...', 'PDF');
+        updateProgress(98, 'Compiling and saving searchable PDF...');
+        const pdfBytes = await pdfDoc.save();
+
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const downloadFilename = `ChainPDF_Searchable_${targetRes}_${Date.now()}.pdf`;
+
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = downloadFilename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+
+        log(`Complete! Generated: ${downloadFilename} (${(pdfBytes.length / (1024 * 1024)).toFixed(2)} MB)`, 'SUCCESS');
+        updateProgress(100, 'Compilation Successful! PDF Saved.');
+        setEngineState('completed', 'COMPLETED');
+
+      } catch (err) {
+        console.error(err);
+        log(`Error encountered: ${err.message}`, 'ERROR');
+        alert(`An error occurred: ${err.message}`);
+        setEngineState('standby', 'ERROR');
+        scanlineBar.classList.remove('active');
+      } finally {
+        if (worker) await worker.terminate();
+        scanlineBar.classList.remove('active');
+        processBtn.disabled = false;
+        chooseFolderBtn.disabled = false;
+        chooseFilesBtn.disabled = false;
+        clearQueueBtn.disabled = false;
+        cropSelect.disabled = false;
+        resSelect.disabled = false;
+        langSelect.disabled = false;
+      }
+    });
+  </script>
+
+</body>
+
+</html>
