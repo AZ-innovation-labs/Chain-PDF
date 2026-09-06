@@ -64,35 +64,70 @@ Traditional OCR utilities typically rely on external cloud APIs (Google Cloud Vi
 
 ## Architecture & Processing Pipeline
 
-```
-[ Image Ingestion ]
-  │  Drag-and-drop folder or files (JPG, PNG, WEBP, BMP)
-  ▼
-[ Natural Alphanumeric Sort ]
-  │  Pages ordered numerically (1, 2, ... 9, 10, 11)
-  ▼
-[ Computer Vision Edge Detection ]
-  │  Automatic border & crop margin isolation
-  ▼
-[ Canvas Dimension Normalization ]
-  │  Resized to selected profile (720p / 1080p / 4K / Original)
-  ▼
-[ Pre-OCR Ink-Contrast Filter ]
-  │  Luminance weighting & channel thresholding for high OCR accuracy
-  ▼
-[ Tesseract SIMD LSTM Worker ]
-  │  WASM neural OCR extracts bounding boxes, lines, and words
-  ▼
-[ Post-OCR Geometric Alignment ]
-  │  ├── Character sanitization (quotes, hyphens, OCR artifacts)
-  │  ├── Word re-stitching across display font kerning gaps
-  │  └── Multi-column gutter binning & reading-order sorting
-  ▼
-[ PDF-Lib Document Compilation ]
-  │  ├── Embeds compressed visual image layer
-  │  └── Injects calibrated invisible font overlay (opacity: 0)
-  ▼
-[ Searchable PDF Auto-Download ]
+The diagram below illustrates how ChainPDF operates entirely within the client browser, detailing the interaction between the UI cockpit, canvas preprocessing, background WebAssembly neural worker, layout geometry engine, and PDF compilation layer:
+
+```mermaid
+flowchart TD
+    subgraph UI ["1. User Interface & Cockpit Layer"]
+        A["User Input (Folder / Multi-File Drag & Drop)"]
+        B["Parameter Settings (Crop, Resolution, Language)"]
+        HUD["Live Dual Monitor (Visual Canvas / OCR Ink Map)"]
+        TERM["Terminal HUD (Real-time Telemetry & Logs)"]
+    end
+
+    subgraph Preprocessing ["2. Computer Vision & Canvas Preprocessing"]
+        C["Natural Alphanumeric Sorter"]
+        D["Border Auto-Crop & Edge Detection"]
+        E["Canvas Resolution Scaler (720p / 1080p / 4K / Original)"]
+        F["Adaptive Ink-Contrast Filter (Luminance Thresholding)"]
+    end
+
+    subgraph NeuralOCR ["3. Local Neural OCR Engine (Background Web Worker)"]
+        G["Tesseract.js Web Worker (worker.min.js)"]
+        H["SIMD LSTM WebAssembly Core (tesseract-core-simd-lstm.wasm)"]
+        I["Local Language Model (tessdata/eng.traineddata.gz)"]
+    end
+
+    subgraph PostProcessing ["4. Spatial Geometry & Layout Engine"]
+        J["Character Sanitizer (Artifact & Symbol Cleaner)"]
+        K["Word Stitcher (Font Kerning Compensation)"]
+        L["Multi-Column Separator (Histogram Gutter Binning)"]
+    end
+
+    subgraph PDFGen ["5. Document Assembly & Export (pdf-lib)"]
+        M["Visual Layer: Embedded Compressed JPEG"]
+        N["Searchable Layer: Calibrated Invisible Helvetica Font (opacity: 0)"]
+        O["PDF Document Compiler (PDFDocument)"]
+        P["Final Searchable PDF (Blob Auto-Download)"]
+    end
+
+    %% Pipeline Connections
+    A --> C
+    B -. Configuration .-> D
+    B -. Configuration .-> E
+    B -. Configuration .-> G
+
+    C --> D
+    D --> E
+    E --> F
+    E --> M
+
+    F --> HUD
+    F --> G
+    I --> G
+    H <--> G
+
+    G --> J
+    G -. Live Telemetry .-> TERM
+    G -. Real-Time Progress .-> HUD
+
+    J --> K
+    K --> L
+    L --> N
+
+    M --> O
+    N --> O
+    O --> P
 ```
 
 ---
