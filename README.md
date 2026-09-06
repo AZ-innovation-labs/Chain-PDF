@@ -42,23 +42,22 @@ Traditional OCR utilities typically rely on external cloud APIs (Google Cloud Vi
 
 ## Key Features
 
-- ** 100% Air-Gapped & Local Execution**: Zero API keys, zero network telemetry, and no file uploads. All processing takes place inside client RAM.
-- ** SIMD LSTM Neural Engine**: Accelerated WebAssembly LSTM (Long Short-Term Memory) neural network OCR for high-speed offline inference.
-- ** Smart Batch Ingestion**:
+- 100% Air-Gapped & Local Execution**: Zero API keys, zero network telemetry, and no file uploads. All processing takes place inside client RAM.
+- SIMD LSTM Neural Engine**: Accelerated WebAssembly LSTM (Long Short-Term Memory) neural network OCR for high-speed offline inference.
+- **Smart Batch Ingestion**:
   - Drag-and-drop entire folders or multiple image files (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`).
   - Recursive folder scanning via HTML5 DataTransfer API.
   - **Natural Alphanumeric Sorting** (e.g., `Page_1.jpg`, `Page_2.jpg` ... `Page_10.jpg` in correct sequential order).
-- ** Automatic Border Detection & Crop**: Scans edge baseline uniformity to detect and trim scanner frames, black borders, and extraneous margins.
-- ** Adaptive Ink-Contrast Isolation**: Pre-OCR computer vision canvas filter enhances faded or colored inks while cleaning tinted, yellowed, or noisy scan backgrounds.
-- ** Multi-Column Reading Order Alignment**: Histogram gutter analysis separates multi-column page layouts (e.g. newspapers, magazines, academic papers), ensuring text selection reads naturally down column 1 before continuing to column 2.
-- ** Exact Invisible Text Layer Injection**:
+- **Automatic Border Detection & Crop**: Scans edge baseline uniformity to detect and trim scanner frames, black borders, and extraneous margins.
+- **Adaptive Ink-Contrast Isolation**: Pre-OCR computer vision canvas filter enhances faded or colored inks while cleaning tinted, yellowed, or noisy scan backgrounds.
+- **Multi-Column Reading Order Alignment**: Histogram gutter analysis separates multi-column page layouts (e.g. newspapers, magazines, academic papers), ensuring text selection reads naturally down column 1 before continuing to column 2.
+- **Exact Invisible Text Layer Injection**:
   - Dynamically matches bounding boxes, baseline offsets, and glyph widths using `Helvetica` typography.
   - Renders transparent selectable text (`opacity: 0`) directly over the visual bitmap.
-- ** Cyberpunk Cockpit HUD & Dual-Mode Monitor**:
-  - Live inspection viewport toggling between the **Visual Frame** and the processed **OCR Ink Map**.
-  - Real-time laser scanline animation and page progress telemetry.
+- **Cyberpunk Cockpit HUD & Dual-Mode Monitor**:
+  - Live inspection viewport toggling between the **Visual Frame** and the processed **OCR Ink Map**..
   - Built-in Engine Execution Terminal for live event logs.
-- ** Resolution Presets**: Target output scaling for 720p (Compact), 1080p (Recommended), 4K (Maximum Detail), or Original unscaled dimensions.
+- **Resolution Presets**: Target output scaling for 720p (Compact), 1080p (Recommended), 4K (Maximum Detail), or Original unscaled dimensions.
 
 ---
 
