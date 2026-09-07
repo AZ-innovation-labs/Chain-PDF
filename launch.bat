@@ -2,25 +2,28 @@
 cd /d "%~dp0"
 
 set PORT=8000
-set TARGET_FILE=chainpdf.html
+set PYTHON_EXE=python\python.exe
 
-if not exist "%TARGET_FILE%" (
-    if exist "chainpdf\%TARGET_FILE%" (
-        cd /d "%~dp0chainpdf"
-    ) else (
-        echo [ERROR] Could not find %TARGET_FILE%.
-        pause
-        exit /b
-    )
-)
+if exist "%PYTHON_EXE%" goto start_server
 
-:: Check if Python is available
-where python >nul 2>nul
-if %errorlevel% equ 0 (
-    echo Starting local server on port %PORT%...
-    start "" http://localhost:%PORT%/%TARGET_FILE%
-    python -m http.server %PORT%
-) else (
-    echo Python not detected. Falling back to direct browser launch...
-    start "" "%TARGET_FILE%"
-)
+echo ============================================================
+echo   Embedded Python runtime not detected.
+echo   Launching automated setup to download portable engine...
+echo ============================================================
+echo.
+call setup_portable_env.bat
+
+if not exist "%PYTHON_EXE%" goto setup_failed
+goto start_server
+
+:setup_failed
+echo [ERROR] Embedded Python could not be configured.
+pause
+exit /b 1
+
+:start_server
+echo ============================================================
+echo   Starting ChainPDF Portable Python Server on port %PORT%...
+echo ============================================================
+start "" http://localhost:%PORT%/
+"%PYTHON_EXE%" server.py

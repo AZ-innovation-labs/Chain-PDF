@@ -1,0 +1,19 @@
+# Portable binaries & environments
+python/
+tesseract/
+wheels/
+*.zip
+*.exe
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Tessdata uncompressed models (keep compressed or ignore)
+tessdata/*.traineddata
+!tessdata/*.traineddata.gz
+
+# Temporary outputs
+test_output.pdf
+test_page_1.png

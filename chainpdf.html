@@ -13,10 +13,6 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap"
     rel="stylesheet">
 
-  <!-- Local Offline Scripts -->
-  <script src="./pdf-lib.min.js"></script>
-  <script src="./tesseract.min.js"></script>
-
   <style>
     :root {
       --bg-dark: #05070e;
@@ -1051,9 +1047,9 @@
       </a>
 
       <div class="nav-telemetry">
-        <div class="badge-chip active">
-          <div class="beacon"></div>
-          <span>SIMD WASM ENGINE</span>
+        <div class="badge-chip active" id="engineBadge">
+          <div class="beacon" id="engineBeacon"></div>
+          <span id="engineBadgeText">PYTHON NEURAL ENGINE</span>
         </div>
         <div class="badge-chip">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1341,8 +1337,8 @@
     </main>
 
     <footer class="app-footer">
-      <span>🔒 100% Client-Side Neural Execution</span>
-      <span>⚡ SIMD LSTM WebAssembly Active</span>
+      <span>🔒 100% Local Python Engine</span>
+      <span>⚡ Embedded Tesseract OCR Pipeline</span>
       <span>📄 Searchable Hidden Font Injection</span>
     </footer>
 
@@ -1634,365 +1630,84 @@
       });
     }
 
-    // Draw image to Live Visual Canvas
-    function renderVisualPreview(img, crop = null, targetWidth = null, targetHeight = null) {
+    // Render visual thumbnail/image to Live Visual Canvas
+    function renderVisualPreview(img) {
       emptyState.style.display = 'none';
-      const cw = targetWidth || (crop ? crop.w : img.naturalWidth);
-      const ch = targetHeight || (crop ? crop.h : img.naturalHeight);
-
-      liveCanvas.width = cw;
-      liveCanvas.height = ch;
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      liveCanvas.width = w;
+      liveCanvas.height = h;
       const ctx = liveCanvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
-
-      if (crop) {
-        ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
-      } else {
-        ctx.drawImage(img, 0, 0, cw, ch);
-      }
-
+      ctx.drawImage(img, 0, 0, w, h);
       updateCanvasVisibility();
     }
 
-    // Draw to OCR Ink Map Preview Canvas
-    function renderOcrPreview(sourceCanvas) {
-      ocrPreviewCanvas.width = sourceCanvas.width;
-      ocrPreviewCanvas.height = sourceCanvas.height;
+    // Render image/dataURL to OCR Preview Canvas
+    function renderOcrPreview(img) {
+      emptyState.style.display = 'none';
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      ocrPreviewCanvas.width = w;
+      ocrPreviewCanvas.height = h;
       const ctx = ocrPreviewCanvas.getContext('2d');
-      ctx.drawImage(sourceCanvas, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
       updateCanvasVisibility();
     }
 
-    // Auto-Crop Detection Algorithm
-    function detectBorderCrop(img) {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      if (w < 80 || h < 80) return { x: 0, y: 0, w, h };
+    function loadImageFromSrc(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0);
-
-      const data = ctx.getImageData(0, 0, w, h).data;
-
-      function getPixel(x, y) {
-        const idx = (y * w + x) * 4;
-        return [data[idx], data[idx + 1], data[idx + 2]];
-      }
-
-      function getEdgeBaseline(isRow, index, maxLen) {
-        const step = Math.max(1, Math.floor(maxLen / 100));
-        let rSum = 0, gSum = 0, bSum = 0, count = 0;
-
-        for (let pos = 0; pos < maxLen; pos += step) {
-          const p = isRow ? getPixel(pos, index) : getPixel(index, pos);
-          rSum += p[0]; gSum += p[1]; bSum += p[2];
-          count++;
-        }
-
-        const avgR = rSum / count;
-        const avgG = gSum / count;
-        const avgB = bSum / count;
-        const isNeutral = (Math.abs(avgR - avgG) < 30 && Math.abs(avgG - avgB) < 30 && Math.abs(avgR - avgB) < 30);
-
-        let devSum = 0;
-        for (let pos = 0; pos < maxLen; pos += step) {
-          const p = isRow ? getPixel(pos, index) : getPixel(index, pos);
-          devSum += Math.abs(p[0] - avgR) + Math.abs(p[1] - avgG) + Math.abs(p[2] - avgB);
-        }
-        const isUniform = (devSum / count) < 35;
-
-        return { avgR, avgG, avgB, isValidBorder: isNeutral && isUniform };
-      }
-
-      function isCornerToCornerLine(isRow, index, maxLen, baseR, baseG, baseB) {
-        const step = maxLen > 2500 ? 2 : 1;
-        let linePixels = 0, total = 0, currentGap = 0, maxGap = 0;
-        let startFound = false, endFound = false;
-        const cornerMargin = Math.floor(maxLen * 0.05);
-
-        for (let pos = 0; pos < maxLen; pos += step) {
-          total++;
-          const [r, g, b] = isRow ? getPixel(pos, index) : getPixel(index, pos);
-          const diff = Math.abs(r - baseR) + Math.abs(g - baseG) + Math.abs(b - baseB);
-          const isLinePixel = diff > 45;
-
-          if (isLinePixel) {
-            linePixels++;
-            currentGap = 0;
-            if (pos <= cornerMargin) startFound = true;
-            if (pos >= maxLen - cornerMargin) endFound = true;
+    // Server Status & Health Check
+    async function checkServerStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (res.ok) {
+          const data = await res.json();
+          const engineBadgeText = document.getElementById('engineBadgeText');
+          const engineBeacon = document.getElementById('engineBeacon');
+          
+          if (data.tesseract_available) {
+            engineBadgeText.textContent = 'PYTHON ENGINE READY';
+            engineBeacon.style.background = '#10b981';
+            engineBeacon.style.boxShadow = '0 0 10px #10b981';
+            log(`Connected to Python engine. Tesseract binary active.`, 'INIT');
           } else {
-            currentGap += step;
-            if (currentGap > maxGap) maxGap = currentGap;
+            engineBadgeText.textContent = 'TESSERACT NOT FOUND';
+            engineBeacon.style.background = '#f59e0b';
+            engineBeacon.style.boxShadow = '0 0 10px #f59e0b';
+            log(`Python connected, but portable Tesseract binary was not found in tesseract\\. Run setup_portable_env.bat to install.`, 'WARN');
+          }
+
+          if (data.languages && data.languages.length > 0) {
+            // Populate select dynamically if custom models exist
+            const currentSelected = langSelect.value;
+            langSelect.innerHTML = '';
+            data.languages.forEach(l => {
+              const opt = document.createElement('option');
+              opt.value = l;
+              opt.textContent = `${l.toUpperCase()} (${l})`;
+              if (l === currentSelected || (l === 'eng' && !currentSelected)) {
+                opt.selected = true;
+              }
+              langSelect.appendChild(opt);
+            });
           }
         }
-
-        const coverage = linePixels / total;
-        const maxAllowedGap = Math.max(10, Math.floor(maxLen * 0.05));
-        return coverage >= 0.92 && startFound && endFound && maxGap <= maxAllowedGap;
+      } catch (err) {
+        log('Could not connect to Python backend. Ensure server.py is running via launch.bat.', 'WARN');
       }
-
-      const maxScanY = Math.floor(h * 0.25);
-      const maxScanX = Math.floor(w * 0.25);
-      let top = 0, bottom = h, left = 0, right = w;
-
-      const topBase = getEdgeBaseline(true, 0, w);
-      if (topBase.isValidBorder) {
-        for (let y = 1; y < maxScanY; y++) {
-          if (isCornerToCornerLine(true, y, w, topBase.avgR, topBase.avgG, topBase.avgB)) {
-            top = y + 1;
-            break;
-          }
-        }
-      }
-
-      const bottomBase = getEdgeBaseline(true, h - 1, w);
-      if (bottomBase.isValidBorder) {
-        for (let y = h - 2; y > h - maxScanY; y--) {
-          if (isCornerToCornerLine(true, y, w, bottomBase.avgR, bottomBase.avgG, bottomBase.avgB)) {
-            bottom = y;
-            break;
-          }
-        }
-      }
-
-      const leftBase = getEdgeBaseline(false, 0, h);
-      if (leftBase.isValidBorder) {
-        for (let x = 1; x < maxScanX; x++) {
-          if (isCornerToCornerLine(false, x, h, leftBase.avgR, leftBase.avgG, leftBase.avgB)) {
-            left = x + 1;
-            break;
-          }
-        }
-      }
-
-      const rightBase = getEdgeBaseline(false, w - 1, h);
-      if (rightBase.isValidBorder) {
-        for (let x = w - 2; x > w - maxScanX; x--) {
-          if (isCornerToCornerLine(false, x, h, rightBase.avgR, rightBase.avgG, rightBase.avgB)) {
-            right = x;
-            break;
-          }
-        }
-      }
-
-      return { x: left, y: top, w: Math.max(50, right - left), h: Math.max(50, bottom - top) };
     }
 
-    function getTargetDimensions(origW, origH, targetRes) {
-      if (targetRes === 'original') return { width: origW, height: origH };
+    checkServerStatus();
 
-      const limits = {
-        '720': { max: 1280, min: 720 },
-        '1080': { max: 1920, min: 1080 },
-        '4k': { max: 3840, min: 2160 }
-      };
-
-      const config = limits[targetRes];
-      const isLandscape = origW >= origH;
-      const boundW = isLandscape ? config.max : config.min;
-      const boundH = isLandscape ? config.min : config.max;
-      const scale = Math.min(1, boundW / origW, boundH / origH);
-
-      return {
-        width: Math.max(1, Math.round(origW * scale)),
-        height: Math.max(1, Math.round(origH * scale))
-      };
-    }
-
-    // Pre-OCR ink-contrast filter: turns colored text into solid dark pixels and cleans tinted backgrounds
-    function preprocessForOcr(canvas) {
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imgData.data;
-
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i];
-        const g = d[i + 1];
-        const b = d[i + 2];
-
-        const minChannel = Math.min(r, g, b);
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        let val = minChannel * 0.75 + luminance * 0.25;
-
-        if (val > 195) {
-          val = 255;
-        } else if (val < 165) {
-          val = Math.max(0, val * 0.55);
-        }
-
-        d[i] = val;
-        d[i + 1] = val;
-        d[i + 2] = val;
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-    }
-
-    // Sanitizes common OCR character artifacts
-    function cleanOcrText(rawText) {
-      if (!rawText) return '';
-      let text = rawText;
-
-      text = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
-      text = text.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
-      text = text.replace(/[\u2013\u2014]/g, '-');
-      text = text.replace(/([a-zA-Z0-9])\|/g, '$1l');
-      text = text.replace(/\|([a-zA-Z0-9])/g, 'l$1');
-
-      return text.replace(/[^\x20-\x7E]/g, '').trim();
-    }
-
-    // Reassembles words split by display font kerning
-    function stitchOcrWords(words) {
-      if (words.length <= 1) return words;
-
-      const sorted = [...words].sort((a, b) => a.bbox.x0 - b.bbox.x0);
-      const stitched = [];
-
-      let curr = {
-        text: cleanOcrText(sorted[0].text),
-        bbox: { ...sorted[0].bbox }
-      };
-
-      for (let i = 1; i < sorted.length; i++) {
-        const next = sorted[i];
-        const nextText = cleanOcrText(next.text);
-        if (!nextText) continue;
-
-        const currH = Math.max(1, curr.bbox.y1 - curr.bbox.y0);
-        const nextH = Math.max(1, next.bbox.y1 - next.bbox.y0);
-        const avgH = (currH + nextH) / 2;
-        const gap = next.bbox.x0 - curr.bbox.x1;
-
-        const isPunctuation = /^[.,;:!?')\]}"]/.test(nextText);
-        const spaceThreshold = isPunctuation ? (avgH * 0.35) : (avgH * 0.20);
-
-        if (gap < spaceThreshold) {
-          curr.text += nextText;
-          curr.bbox.x1 = Math.max(curr.bbox.x1, next.bbox.x1);
-          curr.bbox.y0 = Math.min(curr.bbox.y0, next.bbox.y0);
-          curr.bbox.y1 = Math.max(curr.bbox.y1, next.bbox.y1);
-        } else {
-          if (curr.text) stitched.push(curr);
-          curr = {
-            text: nextText,
-            bbox: { ...next.bbox }
-          };
-        }
-      }
-
-      if (curr.text) stitched.push(curr);
-      return stitched;
-    }
-
-    // Groups lines strictly column-by-column
-    function separateColumns(lines, pageWidth) {
-      if (lines.length <= 1) return lines;
-
-      const contentLines = [];
-      const banners = [];
-
-      for (const l of lines) {
-        if ((l.x1 - l.x0) > pageWidth * 0.65) {
-          banners.push(l);
-        } else {
-          contentLines.push(l);
-        }
-      }
-
-      if (contentLines.length === 0) {
-        return lines.sort((a, b) => a.y0 - b.y0);
-      }
-
-      const binSize = 4;
-      const numBins = Math.ceil(pageWidth / binSize);
-      const occupancy = new Int32Array(numBins);
-
-      for (const l of contentLines) {
-        const startBin = Math.max(0, Math.floor(l.x0 / binSize));
-        const endBin = Math.min(numBins - 1, Math.floor(l.x1 / binSize));
-        for (let b = startBin; b <= endBin; b++) occupancy[b]++;
-      }
-
-      const minX = Math.min(...contentLines.map(l => l.x0));
-      const maxX = Math.max(...contentLines.map(l => l.x1));
-      const startBin = Math.floor(minX / binSize);
-      const endBin = Math.floor(maxX / binSize);
-
-      const gutters = [];
-      let inGutter = false;
-      let gutterStart = 0;
-
-      for (let b = startBin; b <= endBin; b++) {
-        if (occupancy[b] === 0) {
-          if (!inGutter) {
-            inGutter = true;
-            gutterStart = b;
-          }
-        } else {
-          if (inGutter) {
-            inGutter = false;
-            const gutterW = (b - gutterStart) * binSize;
-            if (gutterW >= 16) {
-              gutters.push(((gutterStart + b) / 2) * binSize);
-            }
-          }
-        }
-      }
-
-      if (gutters.length === 0) {
-        return lines.sort((a, b) => {
-          const yDiff = a.y0 - b.y0;
-          if (Math.abs(yDiff) > Math.min(a.lineH, b.lineH) * 0.4) return yDiff;
-          return a.x0 - b.x0;
-        });
-      }
-
-      const splitX = gutters.sort((a, b) => a - b);
-      const columns = Array.from({ length: splitX.length + 1 }, () => []);
-
-      for (const l of contentLines) {
-        const midX = (l.x0 + l.x1) / 2;
-        let colIdx = splitX.length;
-        for (let i = 0; i < splitX.length; i++) {
-          if (midX < splitX[i]) {
-            colIdx = i;
-            break;
-          }
-        }
-        columns[colIdx].push(l);
-      }
-
-      for (const col of columns) {
-        col.sort((a, b) => a.y0 - b.y0);
-      }
-
-      const minY = Math.min(...contentLines.map(l => l.y0));
-      const maxY = Math.max(...contentLines.map(l => l.y1));
-
-      const topBanners = banners.filter(b => b.y1 <= minY).sort((a, b) => a.y0 - b.y0);
-      const bottomBanners = banners.filter(b => b.y0 >= maxY).sort((a, b) => a.y0 - b.y0);
-      const midBanners = banners.filter(b => b.y1 > minY && b.y0 < maxY).sort((a, b) => a.y0 - b.y0);
-
-      return [...topBanners, ...columns.flat(), ...midBanners, ...bottomBanners];
-    }
-
-    function buildLineObject(words, pageHeight) {
-      const x0 = Math.min(...words.map(w => w.bbox.x0));
-      const x1 = Math.max(...words.map(w => w.bbox.x1));
-      const y0 = Math.min(...words.map(w => w.bbox.y0));
-      const y1 = Math.max(...words.map(w => w.bbox.y1));
-      const lineH = Math.max(1, y1 - y0);
-      const baselineY = (pageHeight - y1) + (lineH * 0.21);
-      return { words, x0, x1, y0, y1, lineH, baselineY };
-    }
-
-    // Primary OCR Pipeline Execution
+    // Primary OCR Pipeline Execution (Offloaded 100% to Python Backend)
     processBtn.addEventListener('click', async () => {
       if (validImageFiles.length === 0) return;
 
@@ -2011,236 +1726,113 @@
       const targetRes = resSelect.value;
       const autoCrop = cropSelect.value === 'enabled';
 
-      log(`Initializing local Tesseract engine [${lang}] with SIMD acceleration...`, 'INIT');
-      updateProgress(2, `Initializing Tesseract Engine [${lang}]...`);
+      log(`Dispatching ${validImageFiles.length} image(s) to Python backend [${lang}, ${targetRes}]...`, 'INIT');
+      updateProgress(2, `Uploading batch to Python processing engine...`);
 
-      let worker = null;
+      const formData = new FormData();
+      formData.append('target_res', targetRes);
+      formData.append('auto_crop', autoCrop ? 'true' : 'false');
+      formData.append('lang', lang);
+
+      for (let i = 0; i < validImageFiles.length; i++) {
+        formData.append('files', validImageFiles[i], validImageFiles[i].name);
+      }
+
+      let currentEventSource = null;
 
       try {
-        worker = await Tesseract.createWorker(lang, 1, {
-          workerPath: './worker.min.js',
-          corePath: './tesseract-core-simd-lstm.wasm.js',
-          langPath: './tessdata',
-          cacheMethod: 'none',
-          gzip: true,
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              const pageFrac = (window._currentPageIndex || 0) / validImageFiles.length;
-              const jobFrac = (m.progress || 0) / validImageFiles.length;
-              const currentPct = (pageFrac + jobFrac) * 100;
-              const pageNum = (window._currentPageIndex || 0) + 1;
-              updateProgress(currentPct, `OCR Neural Pass: Page ${pageNum} (${Math.round((m.progress || 0) * 100)}%)`);
-            }
-          }
+        const response = await fetch('/api/process', {
+          method: 'POST',
+          body: formData
         });
 
-        await worker.setParameters({
-          user_defined_dpi: '300',
-          tessedit_pageseg_mode: '3',
-          preserve_interword_spaces: '0'
-        });
-
-        log('Tesseract SIMD engine ready. Initializing PDF-Lib document...', 'INIT');
-        const pdfDoc = await PDFLib.PDFDocument.create();
-        const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-
-        for (let i = 0; i < validImageFiles.length; i++) {
-          window._currentPageIndex = i;
-          const file = validImageFiles[i];
-          const pageNum = i + 1;
-          const totalPages = validImageFiles.length;
-
-          // Telemetry HUD Update
-          hudMetricPage.textContent = `${String(pageNum).padStart(2, '0')} / ${String(totalPages).padStart(2, '0')}`;
-          hudMetricFile.textContent = file.name;
-          updateProgress((i / totalPages) * 100, `Processing Page ${pageNum} of ${totalPages}...`);
-          log(`Page ${pageNum}/${totalPages}: Ingesting ${file.name}...`, 'PAGE');
-
-          // 1. Ingest Image
-          const img = await fileToImage(file);
-
-          // 2. Border Detection / Crop
-          let crop = { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
-          let wasCropped = false;
-          if (autoCrop) {
-            hudMetricCrop.textContent = 'Scanning edges...';
-            crop = detectBorderCrop(img);
-            wasCropped = crop.x > 0 || crop.y > 0 || crop.w < img.naturalWidth || crop.h < img.naturalHeight;
-            if (wasCropped) {
-              hudMetricCrop.textContent = `Cropped (-${img.naturalWidth - crop.w}x-${img.naturalHeight - crop.h})`;
-              log(`Auto-crop isolated content: ${crop.w}×${crop.h} (offset: ${crop.x}, ${crop.y})`, 'CROP');
-            } else {
-              hudMetricCrop.textContent = 'Preserved (Clean)';
-            }
-          } else {
-            hudMetricCrop.textContent = 'Disabled';
-          }
-
-          // 3. Calculate target dimensions
-          const { width, height } = getTargetDimensions(crop.w, crop.h, targetRes);
-          hudMetricDims.textContent = `${width} × ${height} px`;
-
-          // 4. Render Live Visual Canvas & embed into PDF
-          renderVisualPreview(img, crop, width, height);
-
-          // Create PDF Canvas for image layer
-          const pdfCanvas = document.createElement('canvas');
-          pdfCanvas.width = width;
-          pdfCanvas.height = height;
-          const pdfCtx = pdfCanvas.getContext('2d');
-          pdfCtx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
-
-          const jpegDataUrl = pdfCanvas.toDataURL('image/jpeg', 0.85);
-          const embeddedImage = await pdfDoc.embedJpg(jpegDataUrl);
-
-          const page = pdfDoc.addPage([width, height]);
-          page.drawImage(embeddedImage, { x: 0, y: 0, width, height });
-
-          // 5. OCR Canvas with Ink-Contrast Extraction
-          const maxOcrDim = 1400;
-          let ocrW = width;
-          let ocrH = height;
-          let ocrScale = 1.0;
-
-          if (Math.max(width, height) > maxOcrDim) {
-            ocrScale = maxOcrDim / Math.max(width, height);
-            ocrW = Math.round(width * ocrScale);
-            ocrH = Math.round(height * ocrScale);
-          }
-
-          const ocrCanvas = document.createElement('canvas');
-          ocrCanvas.width = ocrW;
-          ocrCanvas.height = ocrH;
-          const ocrCtx = ocrCanvas.getContext('2d');
-          ocrCtx.imageSmoothingEnabled = true;
-          ocrCtx.imageSmoothingQuality = 'high';
-          ocrCtx.drawImage(pdfCanvas, 0, 0, ocrW, ocrH);
-
-          // Apply ink-contrast extraction
-          preprocessForOcr(ocrCanvas);
-
-          // Render OCR Ink-Contrast Live Preview
-          renderOcrPreview(ocrCanvas);
-
-          // 6. Run Neural Recognition with Laser Scanline
-          scanlineBar.classList.add('active');
-          log(`Executing SIMD neural OCR on page ${pageNum}...`, 'OCR');
-
-          const ocrResult = await worker.recognize(ocrCanvas);
-          scanlineBar.classList.remove('active');
-
-          const rawLines = ocrResult.data.lines || [];
-          const structuredLines = [];
-          const toPageScale = 1.0 / ocrScale;
-          let wordCount = 0;
-
-          for (const line of rawLines) {
-            const rawWords = (line.words || []).filter(w => {
-              const clean = cleanOcrText(w.text);
-              return clean.length > 0;
-            }).map(w => ({
-              text: w.text,
-              bbox: {
-                x0: Math.round(w.bbox.x0 * toPageScale),
-                x1: Math.round(w.bbox.x1 * toPageScale),
-                y0: Math.round(w.bbox.y0 * toPageScale),
-                y1: Math.round(w.bbox.y1 * toPageScale)
-              }
-            }));
-
-            if (rawWords.length === 0) continue;
-
-            wordCount += rawWords.length;
-            const stitchedWords = stitchOcrWords(rawWords);
-
-            let currentCluster = [stitchedWords[0]];
-
-            for (let w = 1; w < stitchedWords.length; w++) {
-              const prevWord = stitchedWords[w - 1];
-              const currWord = stitchedWords[w];
-              const gap = currWord.bbox.x0 - prevWord.bbox.x1;
-              const wordH = Math.max(prevWord.bbox.y1 - prevWord.bbox.y0, currWord.bbox.y1 - currWord.bbox.y0);
-              const splitGap = Math.max(18, wordH * 1.15);
-
-              if (gap > splitGap) {
-                structuredLines.push(buildLineObject(currentCluster, height));
-                currentCluster = [currWord];
-              } else {
-                currentCluster.push(currWord);
-              }
-            }
-
-            if (currentCluster.length > 0) {
-              structuredLines.push(buildLineObject(currentCluster, height));
-            }
-          }
-
-          hudMetricWords.textContent = `${wordCount} words`;
-          log(`Extracted ${wordCount} words across ${structuredLines.length} text segments.`, 'OCR');
-
-          // Column-first sequence ordering
-          const orderedLines = separateColumns(structuredLines, width);
-
-          // Inject calibrated invisible text layer
-          for (const line of orderedLines) {
-            const nominalSize = Math.max(4, line.lineH * 0.80);
-
-            for (const word of line.words) {
-              const cleanText = cleanOcrText(word.text);
-              if (!cleanText) continue;
-
-              const actualBoxW = word.bbox.x1 - word.bbox.x0;
-              const actualBoxH = word.bbox.y1 - word.bbox.y0;
-
-              const targetW = actualBoxW + Math.max(1, actualBoxH * 0.04);
-              const unitW = helveticaFont.widthOfTextAtSize(cleanText, 1);
-
-              let fontSize = unitW > 0 ? (targetW / unitW) : nominalSize;
-              fontSize = Math.min(Math.max(fontSize, nominalSize * 0.65), nominalSize * 1.60);
-
-              page.drawText(cleanText, {
-                x: word.bbox.x0,
-                y: line.baselineY,
-                size: fontSize,
-                font: helveticaFont,
-                opacity: 0
-              });
-            }
-          }
-
-          updateProgress(((i + 1) / validImageFiles.length) * 100);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Server responded with status ${response.status}`);
         }
 
-        // 7. Save and Trigger Download
-        log('Assembling final searchable PDF container...', 'PDF');
-        updateProgress(98, 'Compiling and saving searchable PDF...');
-        const pdfBytes = await pdfDoc.save();
+        const { task_id } = await response.json();
+        log(`Task queued with ID: ${task_id}. Establishing live telemetry stream...`, 'INIT');
 
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const downloadUrl = URL.createObjectURL(blob);
-        const downloadFilename = `ChainPDF_Searchable_${targetRes}_${Date.now()}.pdf`;
+        // Connect to Server-Sent Events (SSE) for real-time progress & telemetry
+        currentEventSource = new EventSource(`/api/events?task_id=${task_id}`);
 
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = downloadFilename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
+        currentEventSource.onmessage = async (event) => {
+          try {
+            const data = JSON.parse(event.data);
 
-        log(`Complete! Generated: ${downloadFilename} (${(pdfBytes.length / (1024 * 1024)).toFixed(2)} MB)`, 'SUCCESS');
-        updateProgress(100, 'Compilation Successful! PDF Saved.');
-        setEngineState('completed', 'COMPLETED');
+            if (data.type === 'log') {
+              log(data.message, data.tag || 'INFO');
+            } else if (data.type === 'progress') {
+              updateProgress(data.percentage, data.label);
+            } else if (data.type === 'telemetry') {
+              if (data.page_num && data.total_pages) {
+                hudMetricPage.textContent = `${String(data.page_num).padStart(2, '0')} / ${String(data.total_pages).padStart(2, '0')}`;
+              }
+              if (data.filename) hudMetricFile.textContent = data.filename;
+              if (data.dims) hudMetricDims.textContent = data.dims;
+              if (data.words_detected) hudMetricWords.textContent = data.words_detected;
+              if (data.crop_status) hudMetricCrop.textContent = data.crop_status;
+
+              if (data.visual_preview) {
+                const img = await loadImageFromSrc(data.visual_preview);
+                renderVisualPreview(img);
+              }
+              if (data.ocr_preview) {
+                const img = await loadImageFromSrc(data.ocr_preview);
+                renderOcrPreview(img);
+              }
+            } else if (data.type === 'scanline') {
+              if (data.active) {
+                scanlineBar.classList.add('active');
+              } else {
+                scanlineBar.classList.remove('active');
+              }
+            } else if (data.type === 'finished') {
+              if (currentEventSource) currentEventSource.close();
+              scanlineBar.classList.remove('active');
+              log('Assembling final searchable PDF container...', 'PDF');
+              updateProgress(100, 'Searchable PDF Generated Successfully!');
+              setEngineState('completed', 'COMPLETED');
+
+              // Trigger instant download
+              const downloadUrl = `/api/download?task_id=${task_id}`;
+              const a = document.createElement('a');
+              a.href = downloadUrl;
+              a.download = `ChainPDF_Searchable_${targetRes}_${Date.now()}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+
+              log(`Download initiated successfully!`, 'SUCCESS');
+              resetControls();
+            } else if (data.type === 'error') {
+              if (currentEventSource) currentEventSource.close();
+              scanlineBar.classList.remove('active');
+              log(`Server processing error: ${data.message}`, 'ERROR');
+              alert(`Processing Error: ${data.message}`);
+              setEngineState('standby', 'ERROR');
+              resetControls();
+            }
+          } catch (e) {
+            console.error('SSE Message parsing error:', e);
+          }
+        };
+
+        currentEventSource.onerror = (err) => {
+          console.warn('SSE stream notice:', err);
+        };
 
       } catch (err) {
         console.error(err);
-        log(`Error encountered: ${err.message}`, 'ERROR');
+        log(`Error: ${err.message}`, 'ERROR');
         alert(`An error occurred: ${err.message}`);
         setEngineState('standby', 'ERROR');
         scanlineBar.classList.remove('active');
-      } finally {
-        if (worker) await worker.terminate();
-        scanlineBar.classList.remove('active');
+        resetControls();
+      }
+
+      function resetControls() {
         processBtn.disabled = false;
         chooseFolderBtn.disabled = false;
         chooseFilesBtn.disabled = false;
