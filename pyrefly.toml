@@ -1,0 +1,6 @@
+python-interpreter-path = "python/python.exe"
+search-path = [
+    ".",
+    "core",
+    "python/Lib/site-packages"
+]

@@ -4,6 +4,9 @@ tesseract/
 wheels/
 *.zip
 *.exe
+.vscode/settings.json
+pyproject.toml
+pyrightconfig.json
 
 # Python bytecode
 __pycache__/

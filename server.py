@@ -124,25 +124,35 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
         }
 
         if msg.is_multipart():
-            for part in msg.get_payload():
-                cd = part.get("Content-Disposition", "")
-                name = part.get_param("name", header="content-disposition")
-                filename = part.get_filename()
+            payload = msg.get_payload()
+            if isinstance(payload, list):
+                for part in payload:
+                    if not isinstance(part, email.message.Message):
+                        continue
+                    cd = part.get("Content-Disposition", "")
+                    name = part.get_param("name", header="content-disposition")
+                    filename = part.get_filename()
 
-                if filename:
-                    file_bytes = part.get_payload(decode=True)
-                    try:
-                        img = Image.open(io.BytesIO(file_bytes))
-                        img.load()  # Ensure image is decoded in RAM
-                        files.append({"name": filename, "image": img})
-                    except Exception as e:
-                        print(f"[WARN] Failed to decode image {filename}: {e}")
-                elif name in options:
-                    val = part.get_payload(decode=True).decode("utf-8").strip()
-                    if name == "auto_crop":
-                        options[name] = (val.lower() in ("true", "1", "enabled"))
-                    else:
-                        options[name] = val
+                    if filename:
+                        file_bytes = part.get_payload(decode=True)
+                        if isinstance(file_bytes, (bytes, bytearray)):
+                            try:
+                                img = Image.open(io.BytesIO(file_bytes))
+                                img.load()  # Ensure image is decoded in RAM
+                                files.append({"name": filename, "image": img})
+                            except Exception as e:
+                                print(f"[WARN] Failed to decode image {filename}: {e}")
+                    elif name in options:
+                        raw_val = part.get_payload(decode=True)
+                        val = (
+                            raw_val.decode("utf-8").strip()
+                            if isinstance(raw_val, (bytes, bytearray))
+                            else str(raw_val).strip()
+                        )
+                        if name == "auto_crop":
+                            options[name] = (val.lower() in ("true", "1", "enabled"))
+                        else:
+                            options[name] = val
 
         if not files:
             self.send_response(400)
@@ -204,7 +214,7 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
             "status": "processing"
         }).encode("utf-8"))
 
-    def handle_api_events(self, task_id: str):
+    def handle_api_events(self, task_id: str | None):
         if not task_id or task_id not in TASKS:
             self.send_error(404, "Task not found")
             return
@@ -238,7 +248,7 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
             except Exception:
                 break
 
-    def handle_api_download(self, task_id: str):
+    def handle_api_download(self, task_id: str | None):
         if not task_id or task_id not in TASKS or TASKS[task_id].get("pdf_bytes") is None:
             self.send_error(404, "PDF not ready or task not found")
             return

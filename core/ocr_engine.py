@@ -59,7 +59,7 @@ class OCREngine:
         image: Image.Image,
         lang: str = "eng",
         progress_callback: Optional[Callable[[float, str], None]] = None
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[List[List[Dict[str, Any]]], int]:
         """
         Executes Tesseract OCR on the given image.
         Returns (raw_word_clusters, total_word_count).
