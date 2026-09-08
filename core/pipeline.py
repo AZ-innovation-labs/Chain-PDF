@@ -5,6 +5,7 @@ from PIL import Image
 
 from .preprocessor import detect_border_crop, get_target_dimensions, adaptive_ink_contrast
 from .ocr_engine import OCREngine
+from .upscaler import UpscaleEngine
 from .layout_analyzer import (
     clean_ocr_text,
     stitch_ocr_words,
@@ -37,6 +38,7 @@ class DocumentPipeline:
     def __init__(self, project_root: str):
         self.project_root = project_root
         self.ocr_engine = OCREngine(project_root)
+        self.upscaler = UpscaleEngine(project_root)
 
     def process_batch(
         self,
@@ -44,6 +46,10 @@ class DocumentPipeline:
         target_res: str = "1080",
         auto_crop: bool = True,
         lang: str = "eng",
+        upscale_mode: str = "disabled",
+        upscale_model: str = "2x_Text2HD",
+        upscale_device: str = "gpu",
+        anti_dither: bool = True,
         event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> bytes:
         """
@@ -58,7 +64,7 @@ class DocumentPipeline:
             if event_callback:
                 event_callback({"type": event_type, **data})
 
-        emit("log", {"tag": "INIT", "message": f"Starting Python OCR Engine with {total_pages} page(s) [Lang: {lang}, Res: {target_res}]."})
+        emit("log", {"tag": "INIT", "message": f"Starting Python OCR Engine with {total_pages} page(s) [Lang: {lang}, Res: {target_res}, Upscale: {upscale_mode}, Device: {upscale_device.upper()}]."})
         emit("progress", {"percentage": 2, "label": f"Engine Initialized ({lang}). Preparing document..."})
 
         pdf_builder = PDFBuilder()
@@ -98,21 +104,69 @@ class DocumentPipeline:
                 
                 cropped_img = img.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
 
-                # 2. Resolution Scaling
-                target_w, target_h = get_target_dimensions(crop_w, crop_h, target_res)
-                if (target_w, target_h) != (crop_w, crop_h):
-                    visual_img = cropped_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                else:
-                    visual_img = cropped_img
+                # 2. AI Super-Resolution / Image Enhancement
+                upscaled_base_img = cropped_img
+                was_upscaled = False
+                if upscale_mode and upscale_mode != "disabled":
+                    emit("progress", {
+                        "percentage": (page_frac + (0.15 / total_pages)) * 100,
+                        "label": f"Page {page_num}: AI Enhancing with {upscale_model} [{upscale_device.upper()}]..."
+                    })
 
-                # 3. Emit Visual Preview & Dimensions to Cockpit HUD
+                    def up_cb(msg):
+                        emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {msg}"})
+
+                    upscaled_base_img, was_upscaled, up_summary = self.upscaler.enhance(
+                        image=cropped_img,
+                        upscale_mode=upscale_mode,
+                        upscale_model=upscale_model,
+                        upscale_device=upscale_device,
+                        anti_dither=anti_dither,
+                        progress_callback=up_cb
+                    )
+                    emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {up_summary}"})
+
+                # 3. Resolution Scaling
+                cur_w, cur_h = upscaled_base_img.size
+                if upscale_mode == "enhanced_1080":
+                    target_w, target_h = cur_w, cur_h
+                    visual_img = upscaled_base_img
+                elif was_upscaled and target_res == "original":
+                    # Preserve full neural upscale resolution
+                    target_w, target_h = cur_w, cur_h
+                    visual_img = upscaled_base_img
+                elif was_upscaled and target_res in ("1080", "4k"):
+                    target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
+                    # If target dimensions are smaller than neural output (e.g. 8x NMKD downsampled to 1080p),
+                    # perform high-quality Lanczos downsampling for supersampled anti-aliasing (SSAA)
+                    if (target_w, target_h) != (cur_w, cur_h):
+                        visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    else:
+                        visual_img = upscaled_base_img
+                else:
+                    target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
+                    if (target_w, target_h) != (cur_w, cur_h):
+                        visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    else:
+                        visual_img = upscaled_base_img
+
+                # 4. Emit Visual Preview & Dimensions to Cockpit HUD
                 visual_thumb = image_to_base64_thumbnail(visual_img)
+                upscale_status_text = "Bypassed (Clean)"
+                if upscale_mode == "disabled":
+                    upscale_status_text = "Disabled"
+                elif was_upscaled:
+                    upscale_status_text = f"Enhanced ({upscale_model})"
+                elif upscale_mode == "auto_1080":
+                    upscale_status_text = "Bypassed (≥1080p)"
+
                 emit("telemetry", {
                     "page_num": page_num,
                     "total_pages": total_pages,
                     "filename": filename,
                     "dims": f"{target_w} × {target_h} px",
                     "crop_status": crop_status,
+                    "upscale_status": upscale_status_text,
                     "visual_preview": visual_thumb
                 })
 

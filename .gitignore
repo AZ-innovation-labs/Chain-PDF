@@ -7,7 +7,7 @@ wheels/
 .vscode/settings.json
 pyproject.toml
 pyrightconfig.json
-.gitignore
+pyrefly.toml
 
 # Python bytecode
 __pycache__/
@@ -21,3 +21,8 @@ tessdata/*.traineddata
 # Temporary outputs
 test_output.pdf
 test_page_1.png
+
+# AI Model weights
+models/*.pth
+models/*.tmp
+

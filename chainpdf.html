@@ -1006,6 +1006,11 @@
       color: var(--danger);
     }
 
+    .log-tag-upscale {
+      color: #00f0ff;
+      text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+    }
+
     /* Footer Note */
     .app-footer {
       text-align: center;
@@ -1050,6 +1055,10 @@
         <div class="badge-chip active" id="engineBadge">
           <div class="beacon" id="engineBeacon"></div>
           <span id="engineBadgeText">PYTHON NEURAL ENGINE</span>
+        </div>
+        <div class="badge-chip active" id="aiBadge" title="AI Super-Resolution Acceleration">
+          <div class="beacon" id="aiBeacon" style="background: #28efce;"></div>
+          <span id="aiBadgeText">AI UPSCALE: READY</span>
         </div>
         <div class="badge-chip">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1168,6 +1177,58 @@
                 <option value="1080" selected>1080p (1920 × 1080 - Recommended)</option>
                 <option value="4k">4K (3840 × 2160 - Maximum Detail)</option>
                 <option value="original">Original (No Resizing)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="upscaleModeSelect">
+              <span>AI Super-Resolution</span>
+              <span class="badge-small">NEURAL ENHANCE</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="upscaleModeSelect">
+                <option value="disabled">Disabled (Standard OCR)</option>
+                <option value="auto_1080" selected>Auto Upscale (&lt; 1080p only) [Recommended]</option>
+                <option value="always">Regular Upscale (Always Upscale All Pages)</option>
+                <option value="enhanced_1080">Enhanced 1080p (4K Neural Super-Sample to 1080p)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" id="upscaleModelGroup">
+            <label class="form-label" for="upscaleModelSelect">
+              <span>Upscaler Model</span>
+              <span class="badge-small">WEIGHTS</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="upscaleModelSelect">
+                <option value="2x_Text2HD" selected>2x Text2HD (RealPLKSR) — Ultra-Fast Crisp Text [Auto-Healed]</option>
+                <option value="8x_NMKD">8x NMKD Typescale (ESRGAN) — Studio Typography & Pure Contours</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" id="antiDitherGroup">
+            <label class="form-label" for="antiDitherCheckbox">
+              <span>Ink Hole Healing (Anti-Dither)</span>
+              <span class="badge-small">ENHANCE</span>
+            </label>
+            <div class="custom-select-wrap" style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 1rem; background: var(--bg-input, rgba(255,255,255,0.03)); border: 1px solid var(--border-subtle); border-radius: 12px;">
+              <span style="font-size: 0.82rem; color: var(--text-muted);">Eliminates weird dots inside text strokes</span>
+              <input type="checkbox" id="antiDitherCheckbox" checked style="accent-color: var(--teal, #00f0ff); width: 18px; height: 18px; cursor: pointer;">
+            </div>
+          </div>
+
+          <div class="form-group" id="upscaleDeviceGroup">
+            <label class="form-label" for="upscaleDeviceSelect">
+              <span>AI Accelerator</span>
+              <span class="badge-small">HARDWARE</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="upscaleDeviceSelect">
+                <option value="gpu" selected>GPU (NVIDIA CUDA Acceleration) [Default - Fastest]</option>
+                <option value="cpu">CPU (Multi-Threaded Host Processor)</option>
               </select>
             </div>
           </div>
@@ -1302,6 +1363,10 @@
               <span class="hud-metric-label">AUTO-CROP STATUS</span>
               <span class="hud-metric-value" id="hudMetricCrop">Idle</span>
             </div>
+            <div class="hud-metric">
+              <span class="hud-metric-label">AI ENHANCEMENT</span>
+              <span class="hud-metric-value cyan" id="hudMetricUpscale">Standby</span>
+            </div>
           </div>
         </div>
 
@@ -1357,9 +1422,20 @@
 
     const cropSelect = document.getElementById('cropSelect');
     const resSelect = document.getElementById('resSelect');
+    const upscaleModeSelect = document.getElementById('upscaleModeSelect');
+    const upscaleModelSelect = document.getElementById('upscaleModelSelect');
+    const upscaleModelGroup = document.getElementById('upscaleModelGroup');
+    const upscaleDeviceSelect = document.getElementById('upscaleDeviceSelect');
+    const upscaleDeviceGroup = document.getElementById('upscaleDeviceGroup');
+    const antiDitherGroup = document.getElementById('antiDitherGroup');
+    const antiDitherCheckbox = document.getElementById('antiDitherCheckbox');
     const langSelect = document.getElementById('langSelect');
     const processBtn = document.getElementById('processBtn');
     const processBtnText = document.getElementById('processBtnText');
+
+    const aiBadge = document.getElementById('aiBadge');
+    const aiBadgeText = document.getElementById('aiBadgeText');
+    const aiBeacon = document.getElementById('aiBeacon');
 
     const hudStatusBadge = document.getElementById('hudStatusBadge');
     const hudStatusText = document.getElementById('hudStatusText');
@@ -1377,6 +1453,14 @@
     const hudMetricDims = document.getElementById('hudMetricDims');
     const hudMetricWords = document.getElementById('hudMetricWords');
     const hudMetricCrop = document.getElementById('hudMetricCrop');
+    const hudMetricUpscale = document.getElementById('hudMetricUpscale');
+
+    upscaleModeSelect.addEventListener('change', () => {
+      const isEnabled = (upscaleModeSelect.value !== 'disabled');
+      upscaleModelGroup.style.display = isEnabled ? 'flex' : 'none';
+      if (upscaleDeviceGroup) upscaleDeviceGroup.style.display = isEnabled ? 'flex' : 'none';
+      if (antiDitherGroup) antiDitherGroup.style.display = isEnabled ? 'flex' : 'none';
+    });
 
     const statusLabel = document.getElementById('statusLabel');
     const percentLabel = document.getElementById('percentLabel');
@@ -1419,6 +1503,7 @@
       const time = new Date().toLocaleTimeString();
       let tagColorClass = 'log-tag-ocr';
       if (tag === 'CROP') tagColorClass = 'log-tag-crop';
+      if (tag === 'UPSCALE') tagColorClass = 'log-tag-upscale';
       if (tag === 'DONE' || tag === 'SUCCESS') tagColorClass = 'log-tag-done';
       if (tag === 'ERROR') tagColorClass = 'log-tag-err';
 
@@ -1685,6 +1770,32 @@
             log(`Python connected, but portable Tesseract binary was not found in tesseract\\. Run setup_portable_env.bat to install.`, 'WARN');
           }
 
+          if (data.upscaler_available) {
+            const hwText = data.cuda_available ? `CUDA: ${data.gpu_device_name}` : 'AI: CPU MULTI-CORE';
+            aiBadgeText.textContent = hwText;
+            aiBeacon.style.background = '#00f0ff';
+            aiBeacon.style.boxShadow = '0 0 10px #00f0ff';
+            log(`AI Upscaler Engine active [${hwText}] - RealPLKSR & ESRGAN models loaded.`, 'INIT');
+
+            if (upscaleDeviceSelect) {
+              const gpuOpt = upscaleDeviceSelect.querySelector('option[value="gpu"]');
+              if (gpuOpt) {
+                if (data.cuda_available) {
+                  gpuOpt.textContent = `GPU (${data.gpu_device_name}) [Default - Fastest]`;
+                  gpuOpt.disabled = false;
+                  upscaleDeviceSelect.value = 'gpu';
+                } else {
+                  gpuOpt.textContent = `GPU (CUDA Unavailable - CPU Fallback)`;
+                  gpuOpt.disabled = true;
+                  upscaleDeviceSelect.value = 'cpu';
+                }
+              }
+            }
+          } else {
+            aiBadgeText.textContent = 'AI ENGINE: INITIALIZING';
+            aiBeacon.style.background = '#f59e0b';
+          }
+
           if (data.languages && data.languages.length > 0) {
             // Populate select dynamically if custom models exist
             const currentSelected = langSelect.value;
@@ -1717,6 +1828,10 @@
       clearQueueBtn.disabled = true;
       cropSelect.disabled = true;
       resSelect.disabled = true;
+      upscaleModeSelect.disabled = true;
+      upscaleModelSelect.disabled = true;
+      if (upscaleDeviceSelect) upscaleDeviceSelect.disabled = true;
+      if (antiDitherCheckbox) antiDitherCheckbox.disabled = true;
       langSelect.disabled = true;
 
       setEngineState('processing', 'PROCESSING');
@@ -1725,14 +1840,22 @@
       const lang = langSelect.value;
       const targetRes = resSelect.value;
       const autoCrop = cropSelect.value === 'enabled';
+      const upscaleMode = upscaleModeSelect.value;
+      const upscaleModel = upscaleModelSelect.value;
+      const upscaleDevice = upscaleDeviceSelect ? upscaleDeviceSelect.value : 'gpu';
+      const antiDither = antiDitherCheckbox ? antiDitherCheckbox.checked : true;
 
-      log(`Dispatching ${validImageFiles.length} image(s) to Python backend [${lang}, ${targetRes}]...`, 'INIT');
+      log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: ${targetRes}, AI Upscale: ${upscaleMode}, Device: ${upscaleDevice.toUpperCase()}, Healing: ${antiDither ? 'ON' : 'OFF'}]...`, 'INIT');
       updateProgress(2, `Uploading batch to Python processing engine...`);
 
       const formData = new FormData();
       formData.append('target_res', targetRes);
       formData.append('auto_crop', autoCrop ? 'true' : 'false');
       formData.append('lang', lang);
+      formData.append('upscale_mode', upscaleMode);
+      formData.append('upscale_model', upscaleModel);
+      formData.append('upscale_device', upscaleDevice);
+      formData.append('anti_dither', antiDither ? 'true' : 'false');
 
       for (let i = 0; i < validImageFiles.length; i++) {
         formData.append('files', validImageFiles[i], validImageFiles[i].name);
@@ -1773,6 +1896,7 @@
               if (data.dims) hudMetricDims.textContent = data.dims;
               if (data.words_detected) hudMetricWords.textContent = data.words_detected;
               if (data.crop_status) hudMetricCrop.textContent = data.crop_status;
+              if (data.upscale_status) hudMetricUpscale.textContent = data.upscale_status;
 
               if (data.visual_preview) {
                 const img = await loadImageFromSrc(data.visual_preview);
@@ -1839,6 +1963,10 @@
         clearQueueBtn.disabled = false;
         cropSelect.disabled = false;
         resSelect.disabled = false;
+        upscaleModeSelect.disabled = false;
+        upscaleModelSelect.disabled = false;
+        if (upscaleDeviceSelect) upscaleDeviceSelect.disabled = false;
+        if (antiDitherCheckbox) antiDitherCheckbox.disabled = false;
         langSelect.disabled = false;
       }
     });

@@ -37,7 +37,7 @@ echo import site
 :step_dependencies
 :: 2. Install Python Dependencies directly into Lib\site-packages
 echo.
-echo [2/4] Verifying Python library wheels (pillow, numpy, pytesseract, pymupdf)...
+echo [2/5] Verifying Python library wheels (pillow, numpy, pytesseract, pymupdf)...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "
 $targetDir = Join-Path $pwd 'python\Lib\site-packages'
 if (!(Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
@@ -66,16 +66,50 @@ foreach ($w in $wheels) {
     Remove-Item -Path $zipPath -Force
 }
 "
-echo [OK] All Python dependencies installed.
+echo [OK] Base Python dependencies installed.
 
-:: 3. Setup Portable Tesseract OCR
+:: 3. Setup Pip and AI Super-Resolution Framework (PyTorch + Spandrel)
+echo.
+echo [3/5] Verifying AI Super-Resolution runtime (PyTorch + Spandrel)...
+.\python\python.exe -c "import torch, spandrel" >nul 2>nul
+if errorlevel 1 (
+    echo Bootstrapping pip package manager into embedded Python...
+    if not exist "get-pip.py" curl -sL -o get-pip.py "https://bootstrap.pypa.io/get-pip.py"
+    .\python\python.exe get-pip.py --no-warn-script-location
+    if exist get-pip.py del get-pip.py
+
+    echo Installing PyTorch (CUDA 12.4 GPU acceleration) and Spandrel engine...
+    .\python\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 --no-cache-dir
+    if errorlevel 1 (
+        echo [WARN] CUDA PyTorch install failed or interrupted. Falling back to CPU build...
+        .\python\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
+    )
+    .\python\python.exe -m pip install spandrel spandrel_extra_arches safetensors einops --no-cache-dir
+)
+echo [OK] AI Neural Super-Resolution runtime verified.
+
+:: 4. Verify AI Super-Resolution Model Weights
+echo.
+echo [4/5] Verifying AI Upscaling model weights (2x Text2HD + 8x NMKD)...
+if not exist "models" mkdir "models"
+if not exist "models\2x_Text2HD_v.1-RealPLKSR.pth" (
+    echo Downloading 2x_Text2HD_v.1-RealPLKSR.pth ~29MB...
+    curl.exe -L -o "models\2x_Text2HD_v.1-RealPLKSR.pth" "https://huggingface.co/buckets/AZ-innovation-labs/upscalers/resolve/2x_Text2HD_v.1-RealPLKSR.pth?download=true"
+)
+if not exist "models\8x_NMKD-Typescale_175k.pth" (
+    echo Downloading 8x_NMKD-Typescale_175k.pth ~64MB...
+    curl.exe -L -o "models\8x_NMKD-Typescale_175k.pth" "https://huggingface.co/buckets/AZ-innovation-labs/upscalers/resolve/8x_NMKD-Typescale_175k.pth?download=true"
+)
+echo [OK] AI model weights verified.
+
+:: 5. Setup Portable Tesseract OCR
 echo.
 if exist "tesseract\tesseract.exe" (
     echo [OK] Portable Tesseract OCR already installed in tesseract\
     goto step_tessdata
 )
 
-echo [3/4] Downloading Portable Tesseract OCR 5.4.0 (Windows 64-bit)...
+echo [5/5] Downloading Portable Tesseract OCR 5.4.0 (Windows 64-bit)...
 curl -L -o tesseract_setup.exe "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
 if errorlevel 1 (
     echo [ERROR] Failed to download Tesseract setup.
@@ -83,7 +117,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/4] Extracting portable Tesseract to tesseract\...
+echo [5/5] Extracting portable Tesseract to tesseract\...
 if exist "C:\Program Files\7-Zip\7z.exe" (
     "C:\Program Files\7-Zip\7z.exe" x tesseract_setup.exe -otesseract -y >nul
 ) else (
@@ -106,9 +140,9 @@ if exist tesseract_setup.exe del tesseract_setup.exe
 echo [OK] Tesseract installed in project folder.
 
 :step_tessdata
-:: 4. Extract Tessdata Language Models
+:: Extract Tessdata Language Models
 echo.
-echo [4/4] Verifying Tessdata language models...
+echo Verifying Tessdata language models...
 if not exist "tessdata" mkdir "tessdata"
 if exist "tessdata\eng.traineddata.gz" (
     if not exist "tessdata\eng.traineddata" (
@@ -117,12 +151,12 @@ if exist "tessdata\eng.traineddata.gz" (
     )
 )
 
-:: 5. Verification Test
+:: Verification Test
 echo.
 echo ============================================================
 echo   Verifying Portable Engine Integrity
 echo ============================================================
-.\python\python.exe -c "import pytesseract, PIL, numpy, pymupdf; print('[SUCCESS] Python runtime and dependencies ready!')"
+.\python\python.exe -c "import pytesseract, PIL, numpy, pymupdf, torch, spandrel; print('[SUCCESS] Python runtime, PyTorch, Spandrel, and dependencies ready!')"
 if exist "tesseract\tesseract.exe" (
     echo [SUCCESS] Tesseract binary verified at: %~dp0tesseract\tesseract.exe
 )

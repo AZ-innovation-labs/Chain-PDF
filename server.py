@@ -16,6 +16,7 @@ if PROJECT_ROOT not in sys.path:
 
 from core.pipeline import DocumentPipeline
 from core.ocr_engine import OCREngine
+from core.upscaler import UpscaleEngine
 TASKS: dict[str, dict] = {}
 
 class ChainPDFHandler(SimpleHTTPRequestHandler):
@@ -89,13 +90,22 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
 
     def handle_api_status(self):
         ocr = OCREngine(PROJECT_ROOT)
+        upscaler = UpscaleEngine(PROJECT_ROOT)
+        hw = upscaler.get_hardware_info()
         data = {
             "status": "ready",
             "python_version": sys.version,
             "tesseract_available": ocr.is_available(),
             "tesseract_path": ocr.tesseract_cmd,
             "tessdata_dir": ocr.tessdata_dir,
-            "languages": ocr.get_available_languages()
+            "languages": ocr.get_available_languages(),
+            "upscaler_available": upscaler.is_available(),
+            "cuda_available": hw.get("cuda_available", False),
+            "gpu_device_name": hw.get("device_name", "CPU"),
+            "available_devices": hw.get("available_devices", ["gpu", "cpu"] if hw.get("cuda_available") else ["cpu"]),
+            "default_device": hw.get("default_device", "gpu" if hw.get("cuda_available") else "cpu"),
+            "torch_version": hw.get("torch_version"),
+            "models": hw.get("models", {})
         }
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -120,7 +130,11 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
         options = {
             "target_res": "1080",
             "auto_crop": True,
-            "lang": "eng"
+            "lang": "eng",
+            "upscale_mode": "disabled",
+            "upscale_model": "2x_Text2HD",
+            "upscale_device": "gpu",
+            "anti_dither": True
         }
 
         if msg.is_multipart():
@@ -149,8 +163,8 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
                             if isinstance(raw_val, (bytes, bytearray))
                             else str(raw_val).strip()
                         )
-                        if name == "auto_crop":
-                            options[name] = (val.lower() in ("true", "1", "enabled"))
+                        if name in ("auto_crop", "anti_dither"):
+                            options[name] = (val.lower() in ("true", "1", "enabled", "on"))
                         else:
                             options[name] = val
 
@@ -189,6 +203,10 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
                     target_res=options.get("target_res", "1080"),
                     auto_crop=options.get("auto_crop", True),
                     lang=options.get("lang", "eng"),
+                    upscale_mode=options.get("upscale_mode", "disabled"),
+                    upscale_model=options.get("upscale_model", "2x_Text2HD"),
+                    upscale_device=options.get("upscale_device", "gpu"),
+                    anti_dither=options.get("anti_dither", True),
                     event_callback=cb
                 )
                 TASKS[task_id]["pdf_bytes"] = pdf_bytes
