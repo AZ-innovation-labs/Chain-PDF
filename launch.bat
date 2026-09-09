@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-set PORT=8000
+set PORT=8088
 set PYTHON_EXE=python\python.exe
 
 if exist "%PYTHON_EXE%" goto start_server

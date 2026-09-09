@@ -10,9 +10,19 @@ from urllib.parse import urlparse, parse_qs
 import email
 from PIL import Image
 import io
+import importlib
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+def reload_core_modules():
+    """Reloads core package modules so edits on disk take effect without restarting the server."""
+    for mod_name in list(sys.modules.keys()):
+        if mod_name == "core" or mod_name.startswith("core."):
+            try:
+                importlib.reload(sys.modules[mod_name])
+            except Exception:
+                pass
 
 from core.pipeline import DocumentPipeline
 from core.ocr_engine import OCREngine
@@ -64,7 +74,23 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if path == "/api/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "pid": os.getpid()}).encode("utf-8"))
+            return
+
+        if path == "/api/reload":
+            reload_core_modules()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "reloaded", "pid": os.getpid()}).encode("utf-8"))
+            return
+
         if path == "/api/status":
+            reload_core_modules()
             self.handle_api_status()
             return
 
@@ -131,7 +157,7 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
             "target_res": "1080",
             "auto_crop": True,
             "lang": "eng",
-            "upscale_mode": "disabled",
+            "upscale_mode": "auto",
             "upscale_model": "2x_Text2HD",
             "upscale_device": "gpu",
             "anti_dither": True,
@@ -201,17 +227,23 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
 
         # Background processing thread
         def run_task():
+            reload_core_modules()
+            from core.pipeline import DocumentPipeline
             pipeline = DocumentPipeline(PROJECT_ROOT)
             try:
                 def cb(evt):
                     event_q.put(evt)
 
                 target_res_val = options.get("target_res", "1080")
-                upscale_mode_val = "disabled" if target_res_val == "original" else options.get("upscale_mode", "disabled")
+                upscale_mode_val = "disabled" if target_res_val == "original" else options.get("upscale_mode", "auto")
+                if upscale_mode_val == "auto_1080":
+                    upscale_mode_val = "auto"
+                elif upscale_mode_val == "enhanced_1080":
+                    upscale_mode_val = "neural_downsample"
 
-                default_sharpness = 0.0 if upscale_mode_val in ("auto_1080", "always", "enhanced_1080") else 2.0
+                default_sharpness = 2.0
                 try:
-                    sharpness_val = options.get("sharpness", default_sharpness)
+                    sharpness_val = float(options.get("sharpness", default_sharpness))
                 except (TypeError, ValueError):
                     sharpness_val = default_sharpness
 
@@ -301,7 +333,7 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(pdf_bytes)
 
-def run_server(port=8000):
+def run_server(port=8088):
     server_address = ("", port)
     httpd = ThreadingHTTPServer(server_address, ChainPDFHandler)
     print(f"============================================================")
@@ -316,5 +348,5 @@ def run_server(port=8000):
         httpd.shutdown()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8088))
     run_server(port)

@@ -56,7 +56,7 @@ Traditional OCR utilities typically rely on external cloud APIs (Google Cloud Vi
 - **AI Neural Super-Resolution & Typography Enhancement**:
   - Restores degraded, low-resolution, or blurred scans using deep learning models (**RealPLKSR** and **ESRGAN**).
   - Choice of specialized weights: **2x Text2HD** for ultra-fast text sharpening and **8x NMKD Typescale** for high-ratio typography reconstruction.
-  - Flexible enhancement modes: **Auto Upscale (< 1080p only)**, **Always Upscale**, and **Enhanced 1080p** (4K neural upscale with Lanczos super-sampling down to 1080p).
+  - Flexible enhancement modes: **Auto Upscale (Default)**, **Disabled (Standard OCR)**, **Regular Upscale**, **Always Neural Upscale**, **Downsample then Neural Upscale**, and **Neural Upscale then Downsample**.
   - Hardware-accelerated inference: **NVIDIA CUDA GPU** acceleration with automatic multi-threaded **CPU fallback**.
   - **Sub-Pixel Ink Hole Healing (Anti-Dither)**: Morphological closing filter that seals convolution pinholes and dither dots inside solid text strokes.
   - **Memory-Safe Tiled Inference**: Evaluates images in overlapping tiles with 2D linear feathering to prevent seam lines and eliminate VRAM exhaustion.
@@ -74,7 +74,7 @@ Traditional OCR utilities typically rely on external cloud APIs (Google Cloud Vi
 - **Cyberpunk Cockpit HUD & Dual-Mode Monitor**:
   - Live inspection viewport toggling between the **Visual Frame** and the processed **OCR Ink Map**.
   - Built-in Engine Execution Terminal for live event logs streamed in real time via Server-Sent Events (SSE).
-- **Resolution Presets**: Target output scaling for 720p (Compact), 1080p (Recommended), 4K (Maximum Detail), or Original unscaled dimensions.
+- **Resolution Presets**: Target output scaling for 720p (Compact), 1080p (Recommended), 1440p (2K Quad HD), 4K (Maximum Detail), or Original unscaled dimensions.
 
 ---
 
@@ -150,21 +150,25 @@ The engine supports state-of-the-art super-resolution architectures stored in th
 
 You can configure the AI upscaling behavior directly in the cockpit HUD:
 
-- **Auto Upscale (< 1080p only) [Recommended Default]**:
-  Intelligently checks input resolution against 1080p boundaries ($1920 \times 1080$ landscape or $1080 \times 1920$ portrait). If a page already meets or exceeds 1080p, neural upscaling is bypassed to save time and compute. Only sub-1080p pages are routed to the model.
-- **Regular Upscale (Fast Scaling + Sharpness Slider)**:
-  Uses CPU-native algorithmic scaling (Lanczos resampling) combined with the configurable sharpness slider (default $2.0\times$). Hides deep learning model, tiling, and GPU controls to provide fast scaling and crisp font edge enhancement without AI hallucination or GPU memory usage.
-- **Universal Sharpness Control (All Resolutions & AI Modes)**:
-  The **Image / Post-Scale Sharpness Slider** ($0$ to $4.0\times$) is available across **all target resolution options** (Original, 720p, 1080p, 4K):
-  - **AI Upscaling Modes**: Automatically defaults to **`0` (`0 (Off)`)** to preserve pure neural restoration without introducing artificial haloing or over-sharpening, while giving you complete freedom to increase post-AI sharpness if desired.
-  - **Original (No Resizing)**: Retains exact 1:1 original dimensions while allowing you to apply selective edge sharpening to faded scans.
-  - **Regular Upscale**: Defaults to recommended **`2.0×`** for crisp character strokes.
-- **Always Neural Upscale (All Pages)**:
-  Forces deep learning neural model enhancement on every ingested page regardless of input resolution.
-- **Enhanced 1080p (4K Neural Super-Sampling to 1080p)**:
-  Upscales the input into the $4\text{K}$ neural domain ($3840 \times 2160$), allowing the neural model to reconstruct crisp stroke geometry and eliminate blur. The enhanced image is then supersampled back down to $1080\text{p}$ using high-fidelity Lanczos resampling.
-- **Disabled (Standard OCR)**:
-  Passes raw/cropped images directly to Tesseract without deep learning overhead (with optional sharpness filter if requested).
+1. **Auto Upscale (Default)**:
+   Intelligently evaluates input image dimensions against the selected target resolution. If the original image is **less than 80%** of the target resolution size, deep learning AI upscaling is automatically engaged. If the image is **greater than or equal to 80%**, it seamlessly executes a fast algorithmic Lanczos rescale, saving compute while ensuring optimal crispness.
+2. **Disabled (Standard OCR)**:
+   Passes raw/cropped images directly to Tesseract without deep learning overhead (with optional sharpness filter if requested).
+3. **Regular Upscale**:
+   Uses algorithmic scaling (Lanczos resampling) combined with post-scale edge sharpening. Hides neural weights and GPU controls for a lean, fast processing pipeline.
+4. **Always Neural Upscale (All Pages)**:
+   Forces deep learning neural model enhancement on every ingested page regardless of input resolution.
+5. **Downsample then Neural Upscale**:
+   Pre-downscales the image to a standardized lower resolution tier before running neural enhancement. Downscales to **720p** if image size is between 720p and 1080p, to **1080p** if between 1080p and 1440p, to **1440p** if between 1440p and 4K, and to **4K** if greater than 4K. Then applies neural upscaling to the target resolution. This cleans scan halftone artifacts and dithering before neural stroke reconstruction.
+6. **Neural Upscale then Downsample**:
+   First neural upscales the image into a higher domain (one step above the target resolution, up to max 4K: e.g. 720p &rarr; 1080p, 1080p &rarr; 1440p, 1440p &rarr; 4K), then applies high-fidelity Lanczos downsampling to the target resolution for maximum stroke fidelity and anti-aliased sharpness.
+
+### Universal Sharpness Control (All Resolutions & Modes)
+
+The **Image / Post-Scale Sharpness Slider** ($0$ to $4.0\times$) is available across **all rescale options** and **target resolutions**:
+- Defaults to recommended **`2.0×` (Balanced)** for crisp character strokes.
+- Dynamically adapts label to **Post-AI Sharpness**, **Post-Processing Sharpness**, **Post-Scale Sharpness**, or **Image Sharpness**.
+- Completely customizable from $0$ (Off) to $4.0\times$ (Maximum).
 
 ### Hardware Acceleration & Device Selection
 

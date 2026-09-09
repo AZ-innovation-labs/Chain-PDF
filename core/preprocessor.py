@@ -112,7 +112,9 @@ def get_target_dimensions(orig_w: int, orig_h: int, target_res: str) -> tuple[in
     limits = {
         '720': {'max': 1280, 'min': 720},
         '1080': {'max': 1920, 'min': 1080},
-        '4k': {'max': 3840, 'min': 2160}
+        '1440': {'max': 2560, 'min': 1440},
+        '4k': {'max': 3840, 'min': 2160},
+        '8k': {'max': 7680, 'min': 4320}
     }
     config = limits.get(target_res, limits['1080'])
     is_landscape = orig_w >= orig_h

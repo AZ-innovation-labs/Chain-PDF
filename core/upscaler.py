@@ -33,6 +33,22 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     }
 }
 
+RES_LIMITS: Dict[str, Dict[str, int]] = {
+    "720": {"max": 1280, "min": 720},
+    "1080": {"max": 1920, "min": 1080},
+    "1440": {"max": 2560, "min": 1440},
+    "4k": {"max": 3840, "min": 2160},
+    "8k": {"max": 7680, "min": 4320}
+}
+RES_STEPS = ["720", "1080", "1440", "4k", "8k"]
+
+STEP_UP_MAP: Dict[str, str] = {
+    "720": "1080",
+    "1080": "1440",
+    "1440": "4k",
+    "4k": "8k"
+}
+
 class UpscaleEngine:
     """
     AI Deep Learning Upscaling & Enhancement Engine for ChainPDF.
@@ -409,7 +425,7 @@ class UpscaleEngine:
     def enhance(
         self,
         image: Image.Image,
-        upscale_mode: str = "auto_1080",
+        upscale_mode: str = "auto",
         upscale_model: str = "2x_Text2HD",
         upscale_device: str = "gpu",
         anti_dither: bool = True,
@@ -421,34 +437,77 @@ class UpscaleEngine:
     ) -> Tuple[Image.Image, bool, str]:
         """
         Enhances an image using the selected AI model or algorithmic scaling + sharpness filter.
+        Supported upscale modes:
+          - 'auto': Intelligently triggers AI upscale if image < 80% of target resolution, else regular rescale
+          - 'disabled': Standard OCR pass-through
+          - 'regular': Pure algorithmic Lanczos scaling + sharpness
+          - 'always': Always neural upscale
+          - 'downsample_neural': Downscales to lower tier (720p, 1080p, 1440p, 4k) then neural upscales to target
+          - 'neural_downsample': Neural upscales to a step above target resolution (up to 4K) then downsamples
         Returns: (resulting_image, was_upscaled, summary_message)
         """
+        # Alias legacy mode names
+        if upscale_mode == "auto_1080":
+            upscale_mode = "auto"
+        elif upscale_mode == "enhanced_1080":
+            upscale_mode = "neural_downsample"
+
         if upscale_mode == "disabled" or target_res == "original":
             return image, False, "Upscale disabled (Pass-through)"
 
         orig_w, orig_h = image.size
         is_landscape = orig_w >= orig_h
 
+        # Resolve target resolution bounds
+        res_config = RES_LIMITS.get(target_res, RES_LIMITS["1080"])
+        bound_w = res_config["max"] if is_landscape else res_config["min"]
+        bound_h = res_config["min"] if is_landscape else res_config["max"]
+        scale_to_target = min(bound_w / orig_w, bound_h / orig_h)
+        target_w = max(1, round(orig_w * scale_to_target))
+        target_h = max(1, round(orig_h * scale_to_target))
+
+        # Size ratio of original image relative to fitted target resolution (1.0 = 100% of target)
+        size_ratio = (1.0 / scale_to_target) if scale_to_target > 0 else 1.0
+
+        # Resolve step-up resolution bounds (one step above target_res)
+        step_up_tier = STEP_UP_MAP.get(target_res, "1440")
+        step_up_cfg = RES_LIMITS.get(step_up_tier, RES_LIMITS["1440"])
+        step_up_bound_w = step_up_cfg["max"] if is_landscape else step_up_cfg["min"]
+        step_up_bound_h = step_up_cfg["min"] if is_landscape else step_up_cfg["max"]
+        scale_to_step_up = min(step_up_bound_w / orig_w, step_up_bound_h / orig_h)
+        step_up_w = max(1, round(orig_w * scale_to_step_up))
+        step_up_h = max(1, round(orig_h * scale_to_step_up))
+
+        # Handle 'neural_downsample' mode native resolution check:
+        # If the original image is ALREADY at or higher than the one-step-above tier
+        # (e.g. A4 scan 2480x3508 when target is 1080p and step-up is 1440p):
+        # The image is already supersampled! Neural upscaling an already-high-res image (or downscaling it beforehand)
+        # destroys character strokes and makes text gibberish. We preserve native resolution and
+        # downsample cleanly with Lanczos directly to target_res.
+        if upscale_mode == "neural_downsample" and orig_w >= step_up_w and orig_h >= step_up_h:
+            start_time = time.time()
+            if progress_callback:
+                progress_callback(
+                    f"Native image ({orig_w}×{orig_h}) already exceeds {step_up_tier}p ({step_up_w}×{step_up_h}). "
+                    f"Directly supersampling down to {target_res}p ({target_w}×{target_h})..."
+                )
+            if (target_w, target_h) != (orig_w, orig_h):
+                final_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            else:
+                final_img = image.copy()
+
+            elapsed = time.time() - start_time
+            summary = (
+                f"Neural Super-Sample (Intelligent Native): Native resolution ({orig_w}×{orig_h} >= {step_up_tier}p) "
+                f"downsampled cleanly with Lanczos to {target_w}×{target_h} ({target_res}p) ({elapsed:.2f}s)"
+            )
+            return final_img, False, summary
+
         # Handle 'regular' upscale mode: pure algorithmic scaling + post-scale sharpness filter
         if upscale_mode == "regular":
             start_time = time.time()
             if progress_callback:
                 progress_callback("Running regular algorithmic scaling (Lanczos)...")
-
-            if target_res == "original":
-                target_w, target_h = orig_w * 2, orig_h * 2
-            else:
-                limits = {
-                    "720": {"max": 1280, "min": 720},
-                    "1080": {"max": 1920, "min": 1080},
-                    "4k": {"max": 3840, "min": 2160}
-                }
-                config = limits.get(target_res, limits["1080"])
-                bound_w = config["max"] if is_landscape else config["min"]
-                bound_h = config["min"] if is_landscape else config["max"]
-                scale = min(bound_w / orig_w, bound_h / orig_h)
-                target_w = max(1, round(orig_w * scale))
-                target_h = max(1, round(orig_h * scale))
 
             if (target_w, target_h) != (orig_w, orig_h):
                 scaled_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
@@ -472,41 +531,102 @@ class UpscaleEngine:
             )
             return sharpened_img, True, summary
 
-        # Evaluate conditional logic (< 1080p only)
-        if upscale_mode == "auto_1080":
-            # 1080p standard boundary: 1920x1080 (landscape) or 1080x1920 (portrait)
-            max_bound = 1920
-            min_bound = 1080
-            bound_w = max_bound if is_landscape else min_bound
-            bound_h = min_bound if is_landscape else max_bound
+        # Handle 'auto' upscale mode:
+        # Trigger AI upscale only if original image is less than 80% (< 0.80) of target resolution.
+        # If original image is >= 80% of target resolution, perform regular image rescale.
+        if upscale_mode == "auto" and size_ratio >= 0.80:
+            start_time = time.time()
+            if progress_callback:
+                progress_callback(
+                    f"Auto Upscale: Page size ({orig_w}×{orig_h}) is {size_ratio*100:.1f}% of target resolution (>= 80%). "
+                    f"Performing regular algorithmic rescale..."
+                )
 
-            # If dimensions already meet or exceed 1080p boundary, skip upscaling
-            if (orig_w >= bound_w and orig_h >= bound_h) or (orig_w >= max_bound or orig_h >= max_bound):
-                return image, False, f"Page resolution ({orig_w}×{orig_h}) meets/exceeds 1080p threshold. Upscale bypassed."
+            if (target_w, target_h) != (orig_w, orig_h):
+                scaled_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            else:
+                scaled_img = image.copy()
 
+            sharpness_val = max(0.0, sharpness)
+            has_sharpness = (sharpness_val > 0.0 and abs(sharpness_val - 1.0) >= 0.01)
+            if has_sharpness:
+                if progress_callback:
+                    progress_callback(f"Applying post-scale sharpness filter ({sharpness_val:.1f}×)...")
+                enhancer = ImageEnhance.Sharpness(scaled_img)
+                sharpened_img = enhancer.enhance(sharpness_val)
+            else:
+                sharpened_img = scaled_img
+
+            elapsed = time.time() - start_time
+            sharp_note = f" + Sharpness ({sharpness_val:.1f}×)" if has_sharpness else ""
+            summary = (
+                f"Auto Scaled: Regular Lanczos ({orig_w}×{orig_h} -> {target_w}×{target_h}, {size_ratio*100:.1f}% >= 80%){sharp_note} ({elapsed:.2f}s)"
+            )
+            return sharpened_img, False, summary
+
+        # Load AI neural model
         target_device, dev_name = self.resolve_device(upscale_device)
         model_key = upscale_model if upscale_model in MODEL_REGISTRY else "2x_Text2HD"
+
+        # Intelligent model selection for 'neural_downsample':
+        # If 8x model is requested, but the upscale factor needed to reach step-up resolution is <= 3.0x
+        # (or 2x is already enough to reach target resolution), intelligently select 2x_Text2HD.
+        # This avoids generating a massive 8K (8192px) tensor that takes 30s+ and memory bloat,
+        # while delivering identical or superior crisp typography in ~4-5s.
+        if upscale_mode == "neural_downsample" and model_key == "8x_NMKD":
+            req_scale = max(step_up_w / orig_w, step_up_h / orig_h)
+            if (req_scale <= 3.0 or orig_w * 2 >= target_w or orig_h * 2 >= target_h) and "2x_Text2HD" in MODEL_REGISTRY:
+                model_key = "2x_Text2HD"
+                if progress_callback:
+                    progress_callback(
+                        f"Intelligently selected 2x Text2HD: {req_scale:.1f}× upscale needed for {step_up_tier}p — 2x is optimal without 8x over-scaling..."
+                    )
+
         descriptor = self.load_model(model_key, device=target_device, progress_callback=progress_callback)
         model_info = MODEL_REGISTRY[model_key]
         scale = getattr(descriptor, "scale", model_info.get("scale", 2))
 
-        # Handle 'enhanced_1080' mode:
-        # Pre-calibrate input size so that upscaling hits ~4K maximum bounds (3840x2160)
-        # then downsamples cleanly with Lanczos to 1080p.
         work_img = image
-        if upscale_mode == "enhanced_1080":
-            target_4k_max = 3840
-            target_4k_min = 2160
-            bound_4k_w = target_4k_max if is_landscape else target_4k_min
-            bound_4k_h = target_4k_min if is_landscape else target_4k_max
+        down_summary = ""
 
-            # If image * scale would far exceed 4K, scale input down beforehand
-            if scale is not None:
-                if orig_w * scale > bound_4k_w or orig_h * scale > bound_4k_h:
-                    pre_scale = min(bound_4k_w / (orig_w * scale), bound_4k_h / (orig_h * scale))
-                    pre_w = max(64, round(orig_w * pre_scale))
-                    pre_h = max(64, round(orig_h * pre_scale))
-                    work_img = image.resize((pre_w, pre_h), Image.Resampling.BILINEAR)
+        # Handle 'downsample_neural' mode:
+        # Downscale to lower resolution tier:
+        # - Downscale to 720p if image size > 720p and < 1080p
+        # - Downscale to 1080p if image size > 1080p and < 1440p
+        # - Downscale to 1440p if image size > 1440p and < 4k
+        # - Downscale to 4k if image size > 4k
+        if upscale_mode == "downsample_neural":
+            b4k_w = RES_LIMITS["4k"]["max"] if is_landscape else RES_LIMITS["4k"]["min"]
+            b4k_h = RES_LIMITS["4k"]["min"] if is_landscape else RES_LIMITS["4k"]["max"]
+            b1440_w = RES_LIMITS["1440"]["max"] if is_landscape else RES_LIMITS["1440"]["min"]
+            b1440_h = RES_LIMITS["1440"]["min"] if is_landscape else RES_LIMITS["1440"]["max"]
+            b1080_w = RES_LIMITS["1080"]["max"] if is_landscape else RES_LIMITS["1080"]["min"]
+            b1080_h = RES_LIMITS["1080"]["min"] if is_landscape else RES_LIMITS["1080"]["max"]
+            b720_w = RES_LIMITS["720"]["max"] if is_landscape else RES_LIMITS["720"]["min"]
+            b720_h = RES_LIMITS["720"]["min"] if is_landscape else RES_LIMITS["720"]["max"]
+
+            down_tier = None
+            if orig_w > b4k_w or orig_h > b4k_h:
+                down_tier = "4k"
+            elif orig_w > b1440_w or orig_h > b1440_h:
+                down_tier = "1440"
+            elif orig_w > b1080_w or orig_h > b1080_h:
+                down_tier = "1080"
+            elif orig_w > b720_w or orig_h > b720_h:
+                down_tier = "720"
+
+            if down_tier:
+                d_cfg = RES_LIMITS[down_tier]
+                dw_bound = d_cfg["max"] if is_landscape else d_cfg["min"]
+                dh_bound = d_cfg["min"] if is_landscape else d_cfg["max"]
+                down_scale = min(dw_bound / orig_w, dh_bound / orig_h)
+                dw = max(1, round(orig_w * down_scale))
+                dh = max(1, round(orig_h * down_scale))
+                if (dw, dh) != (orig_w, orig_h):
+                    if progress_callback:
+                        progress_callback(f"Pre-downscaling image from {orig_w}×{orig_h} to {down_tier}p ({dw}×{dh})...")
+                    work_img = image.resize((dw, dh), Image.Resampling.LANCZOS)
+                    down_summary = f"Pre-downscaled {orig_w}×{orig_h} -> {dw}×{dh} ({down_tier}p)"
 
         start_time = time.time()
         if progress_callback:
@@ -578,26 +698,55 @@ class UpscaleEngine:
 
         up_w, up_h = upscaled_img.size
 
-        # For 'enhanced_1080', downscale to 1080p boundary
-        if upscale_mode == "enhanced_1080":
-            target_1080_max = 1920
-            target_1080_min = 1080
-            bound_1080_w = target_1080_max if is_landscape else target_1080_min
-            bound_1080_h = target_1080_min if is_landscape else target_1080_max
+        # Mode 6: Neural Upscale then Downsample - downsample to target_res boundary
+        if upscale_mode == "neural_downsample":
+            # Ensure output is at or higher than the one-step-above tier
+            if up_w < step_up_w or up_h < step_up_h:
+                step_up_img = upscaled_img.resize((step_up_w, step_up_h), Image.Resampling.LANCZOS)
+            else:
+                step_up_img = upscaled_img
 
-            scale_down = min(bound_1080_w / up_w, bound_1080_h / up_h)
-            final_w = max(1, round(up_w * scale_down))
-            final_h = max(1, round(up_h * scale_down))
-
-            final_img = upscaled_img.resize((final_w, final_h), Image.Resampling.LANCZOS)
+            final_img = step_up_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
             summary = (
-                f"Enhanced 1080p: Neural 4K upscale ({orig_w}×{orig_h} -> {up_w}×{up_h}) "
-                f"[{tile_summary}]{healed_note} + Lanczos supersampled to {final_w}×{final_h} ({elapsed:.2f}s, {dev_name})"
+                f"Neural Upscale then Downsample: AI {model_info['name']} [{tile_summary}]{healed_note} "
+                f"({orig_w}×{orig_h} -> {up_w}×{up_h}, >= {step_up_tier}p) + Lanczos downsampled to {target_w}×{target_h} ({target_res}p) "
+                f"({elapsed:.2f}s, {dev_name})"
             )
             return final_img, True, summary
 
+        # Mode 5: Downsample then Neural Upscale - scale neural output to target_res boundary
+        if upscale_mode == "downsample_neural":
+            if (target_w, target_h) != (up_w, up_h):
+                final_img = upscaled_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            else:
+                final_img = upscaled_img
+            pre_note = f"{down_summary} -> " if down_summary else ""
+            summary = (
+                f"Downsample then Neural Upscale: {pre_note}AI {model_info['name']} [{tile_summary}]{healed_note} "
+                f"({up_w}×{up_h}) -> Lanczos {target_w}×{target_h} ({elapsed:.2f}s, {dev_name})"
+            )
+            return final_img, True, summary
+
+        # Mode 1: Auto Neural Upscale (when image was < 80% of target resolution)
+        if upscale_mode == "auto":
+            if (target_w, target_h) != (up_w, up_h):
+                final_img = upscaled_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            else:
+                final_img = upscaled_img
+            summary = (
+                f"Auto Neural Upscale: {orig_w}×{orig_h} ({size_ratio*100:.1f}% of target < 80%) -> "
+                f"AI {model_info['name']} [{tile_summary}]{healed_note} ({up_w}×{up_h}) -> Lanczos {target_w}×{target_h} "
+                f"({elapsed:.2f}s, {dev_name})"
+            )
+            return final_img, True, summary
+
+        # Mode 4: Always Neural Upscale
+        if (target_w, target_h) != (up_w, up_h):
+            final_img = upscaled_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        else:
+            final_img = upscaled_img
         summary = (
-            f"AI Upscaled with {model_info['name']} [{tile_summary}]{healed_note}: {orig_w}×{orig_h} -> {up_w}×{up_h} "
-            f"({elapsed:.2f}s, {dev_name})"
+            f"Always Neural Upscale: AI {model_info['name']} [{tile_summary}]{healed_note}: {orig_w}×{orig_h} -> "
+            f"{up_w}×{up_h} -> Lanczos {target_w}×{target_h} ({elapsed:.2f}s, {dev_name})"
         )
-        return upscaled_img, True, summary
+        return final_img, True, summary

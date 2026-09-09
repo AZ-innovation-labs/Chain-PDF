@@ -46,7 +46,7 @@ class DocumentPipeline:
         target_res: str = "1080",
         auto_crop: bool = True,
         lang: str = "eng",
-        upscale_mode: str = "disabled",
+        upscale_mode: str = "auto",
         upscale_model: str = "2x_Text2HD",
         upscale_device: str = "gpu",
         anti_dither: bool = True,
@@ -72,10 +72,19 @@ class DocumentPipeline:
             upscale_label = f"Original (1:1 + {sharpness:.1f}× Sharpness)"
         elif upscale_mode == "regular":
             upscale_label = f"Regular (Lanczos + {sharpness:.1f}× Sharpness)"
+        elif upscale_mode == "disabled":
+            upscale_label = f"Disabled (Standard OCR + {sharpness:.1f}× Sharpness)"
+        elif upscale_mode in ("auto", "auto_1080"):
+            upscale_label = f"Auto Upscale ({upscale_model} [{upscale_device.upper()}])"
+        elif upscale_mode == "downsample_neural":
+            upscale_label = f"Downsample & AI ({upscale_model} [{upscale_device.upper()}])"
+        elif upscale_mode in ("neural_downsample", "enhanced_1080"):
+            upscale_label = f"AI & Downsample ({upscale_model} [{upscale_device.upper()}])"
         else:
             upscale_label = f"{upscale_mode} [{upscale_device.upper()}]"
         emit("log", {"tag": "INIT", "message": f"Starting Python OCR Engine with {total_pages} page(s) [Lang: {lang}, Res: {target_res}, Mode: {upscale_label}]."})
         emit("progress", {"percentage": 2, "label": f"Engine Initialized ({lang}). Preparing document..."})
+        emit("scanline", {"active": True})
 
         pdf_builder = PDFBuilder()
 
@@ -84,6 +93,7 @@ class DocumentPipeline:
                 page_num = idx + 1
                 filename = item["name"]
                 img: Image.Image = ensure_rgb(item["image"])
+                orig_w, orig_h = img.size
 
                 page_frac = idx / total_pages
                 emit("progress", {
@@ -92,18 +102,27 @@ class DocumentPipeline:
                 })
                 emit("log", {"tag": "PAGE", "message": f"Page {page_num}/{total_pages}: Loading {filename}..."})
 
+                # Stream initial raw page thumbnail and telemetry so scanning line animation is immediately visible over it during upscaling
+                raw_thumb = image_to_base64_thumbnail(img)
+                emit("telemetry", {
+                    "page_num": page_num,
+                    "total_pages": total_pages,
+                    "filename": filename,
+                    "dims": f"{orig_w} × {orig_h} px",
+                    "crop_status": "Scanning edges..." if auto_crop else "Disabled",
+                    "upscale_status": (
+                        f"AI Enhancing ({upscale_model})..."
+                        if (upscale_mode not in ("disabled", "regular") and target_res != "original")
+                        else ("Regular Scaling..." if upscale_mode == "regular" else "Original (1:1)")
+                    ),
+                    "visual_preview": raw_thumb
+                })
+
                 # 1. Border Detection / Crop
-                orig_w, orig_h = img.size
                 crop_x, crop_y, crop_w, crop_h = 0, 0, orig_w, orig_h
                 crop_status = "Disabled"
 
                 if auto_crop:
-                    emit("telemetry", {
-                        "page_num": page_num,
-                        "total_pages": total_pages,
-                        "filename": filename,
-                        "crop_status": "Scanning edges..."
-                    })
                     crop_x, crop_y, crop_w, crop_h = detect_border_crop(img)
                     was_cropped = (crop_x > 0 or crop_y > 0 or crop_w < orig_w or crop_h < orig_h)
                     if was_cropped:
@@ -168,15 +187,9 @@ class DocumentPipeline:
 
                     # 3. Resolution Scaling
                     cur_w, cur_h = upscaled_base_img.size
-                    if upscale_mode in ("enhanced_1080", "regular"):
+                    if upscale_mode in ("enhanced_1080", "neural_downsample", "regular", "downsample_neural", "auto", "always"):
                         target_w, target_h = cur_w, cur_h
                         visual_img = upscaled_base_img
-                    elif was_upscaled and target_res in ("1080", "4k"):
-                        target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
-                        if (target_w, target_h) != (cur_w, cur_h):
-                            visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                        else:
-                            visual_img = upscaled_base_img
                     else:
                         target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
                         if (target_w, target_h) != (cur_w, cur_h):
@@ -184,8 +197,10 @@ class DocumentPipeline:
                         else:
                             visual_img = upscaled_base_img
 
-                    # Post-scaling/enhancement sharpness for non-regular modes (regular already sharpened in upscaler)
-                    if upscale_mode != "regular" and has_sharpness:
+                    # Post-scaling/enhancement sharpness:
+                    # 'regular' and regular path of 'auto' already applied sharpness inside upscaler.enhance
+                    already_sharpened = (upscale_mode == "regular") or (upscale_mode in ("auto", "auto_1080") and not was_upscaled)
+                    if not already_sharpened and has_sharpness:
                         emit("progress", {
                             "percentage": (page_frac + (0.18 / total_pages)) * 100,
                             "label": f"Page {page_num}: Applying post-enhancement sharpness ({sharpness_val:.1f}×)..."
@@ -195,17 +210,29 @@ class DocumentPipeline:
                         emit("log", {"tag": "SHARP", "message": f"Page {page_num}: Applied {sharpness_val:.1f}× post-enhancement sharpness filter to {target_w}×{target_h} image."})
 
                     upscale_status_text = "Bypassed (Clean)"
+                    sharp_tag = f" + {sharpness_val:.1f}× Sharp" if has_sharpness else ""
+                    tiling_tag = "Single-Tile" if tile_mode == "single" else (f"{tile_count}T" if tile_count != "auto" else "AutoT")
+
                     if upscale_mode == "disabled":
                         upscale_status_text = f"Disabled ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Disabled"
                     elif upscale_mode == "regular":
                         upscale_status_text = f"Regular ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Regular (Lanczos)"
+                    elif upscale_mode in ("auto", "auto_1080"):
+                        if was_upscaled:
+                            upscale_status_text = f"Auto-AI ({upscale_model} • {tiling_tag}{sharp_tag})"
+                        else:
+                            upscale_status_text = f"Auto-Regular (>=80%){sharp_tag}"
+                    elif upscale_mode == "downsample_neural":
+                        upscale_status_text = f"Down-AI ({upscale_model} • {tiling_tag}{sharp_tag})"
+                    elif upscale_mode in ("neural_downsample", "enhanced_1080"):
+                        if was_upscaled:
+                            upscale_status_text = f"AI-Down ({upscale_model} • {tiling_tag}{sharp_tag})"
+                        else:
+                            upscale_status_text = f"Native-Down ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Native-Down (Lanczos)"
+                    elif upscale_mode == "always":
+                        upscale_status_text = f"Always-AI ({upscale_model} • {tiling_tag}{sharp_tag})"
                     elif was_upscaled:
-                        tiling_tag = "Single-Tile" if tile_mode == "single" else (f"{tile_count}T" if tile_count != "auto" else "AutoT")
-                        sharp_tag = f" + {sharpness_val:.1f}× Sharp" if has_sharpness else ""
                         upscale_status_text = f"Enhanced ({upscale_model} • {tiling_tag}{sharp_tag})"
-                    elif upscale_mode == "auto_1080":
-                        sharp_tag = f" ({sharpness_val:.1f}× Sharp)" if has_sharpness else ""
-                        upscale_status_text = f"Bypassed (≥1080p){sharp_tag}"
 
                 visual_thumb = image_to_base64_thumbnail(visual_img)
                 emit("telemetry", {
@@ -242,8 +269,7 @@ class DocumentPipeline:
                     "ocr_preview": ocr_thumb
                 })
 
-                # 5. Execute Tesseract Neural OCR with Laser Scanline Trigger
-                emit("scanline", {"active": True})
+                # 5. Execute Tesseract Neural OCR
                 emit("progress", {
                     "percentage": (page_frac + (0.5 / total_pages)) * 100,
                     "label": f"Page {page_num}: Running neural OCR inference..."
@@ -261,8 +287,6 @@ class DocumentPipeline:
                     lang=lang,
                     progress_callback=ocr_cb
                 )
-
-                emit("scanline", {"active": False})
 
                 # Scale coordinates back up to full page space
                 to_page_scale = 1.0 / ocr_scale
@@ -340,4 +364,5 @@ class DocumentPipeline:
             return pdf_bytes
 
         finally:
+            emit("scanline", {"active": False})
             pdf_builder.close()
