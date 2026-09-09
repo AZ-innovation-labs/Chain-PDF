@@ -515,6 +515,51 @@
       font-size: 0.85rem;
     }
 
+    /* Range Slider Styling */
+    .custom-range-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .custom-range-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .custom-range-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      box-shadow: 0 0 16px rgba(0, 240, 255, 0.9);
+    }
+
+    .custom-range-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+      cursor: pointer;
+      border: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .custom-range-slider::-moz-range-thumb:hover {
+      transform: scale(1.15);
+      box-shadow: 0 0 16px rgba(0, 240, 255, 0.9);
+    }
+
     /* Glowing Primary Action Button */
     .btn-glow-primary {
       width: 100%;
@@ -1181,7 +1226,7 @@
             </div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="upscaleModeGroup">
             <label class="form-label" for="upscaleModeSelect">
               <span>AI Super-Resolution</span>
               <span class="badge-small">NEURAL ENHANCE</span>
@@ -1190,9 +1235,31 @@
               <select id="upscaleModeSelect">
                 <option value="disabled">Disabled (Standard OCR)</option>
                 <option value="auto_1080" selected>Auto Upscale (&lt; 1080p only) [Recommended]</option>
-                <option value="always">Regular Upscale (Always Upscale All Pages)</option>
+                <option value="regular">Regular Upscale (Fast Scaling + Sharpness Slider)</option>
+                <option value="always">Always Neural Upscale (All Pages)</option>
                 <option value="enhanced_1080">Enhanced 1080p (4K Neural Super-Sample to 1080p)</option>
               </select>
+            </div>
+          </div>
+
+          <div class="form-group" id="regularSharpnessGroup">
+            <label class="form-label" for="regularSharpnessSlider">
+              <span id="sharpnessLabelTitle">Image Sharpness</span>
+              <span class="badge-small" id="sharpnessBadge">0 (Off)</span>
+            </label>
+            <div style="background: rgba(9, 14, 26, 0.95); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.6rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Edge & Text Stroke Sharpness:</span>
+                <span style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--cyan); font-weight: 600;" id="sharpnessLevelText">Off (Pass-through)</span>
+              </div>
+              <input type="range" id="regularSharpnessSlider" min="0" max="4.0" step="0.1" value="0" class="custom-range-slider">
+              <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-dim); font-family: var(--font-mono);">
+                <span>0 (Off)</span>
+                <span>1.0×</span>
+                <span style="color: var(--cyan);">2.0× (Balanced)</span>
+                <span>3.0× (Crisp)</span>
+                <span>4.0× (Max)</span>
+              </div>
             </div>
           </div>
 
@@ -1217,6 +1284,44 @@
             <div class="custom-select-wrap" style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 1rem; background: var(--bg-input, rgba(255,255,255,0.03)); border: 1px solid var(--border-subtle); border-radius: 12px;">
               <span style="font-size: 0.82rem; color: var(--text-muted);">Eliminates weird dots inside text strokes</span>
               <input type="checkbox" id="antiDitherCheckbox" checked style="accent-color: var(--teal, #00f0ff); width: 18px; height: 18px; cursor: pointer;">
+            </div>
+          </div>
+
+          <div class="form-group" id="upscaleTileModeGroup">
+            <label class="form-label" for="upscaleTileModeSelect">
+              <span>Tiling Mode</span>
+              <span class="badge-small">PASS MODE</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="upscaleTileModeSelect">
+                <option value="multi" selected>Multi-Tile Pass (Overlapping Blended Tiles) [Default]</option>
+                <option value="single">Single-Tile Pass (Full Frame / Single Pass — No Seams)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" id="upscaleTileCountGroup">
+            <label class="form-label" for="upscaleTileCountSelect">
+              <span>Tile Count / Grid</span>
+              <span class="badge-small">TILES</span>
+            </label>
+            <div class="custom-select-wrap">
+              <select id="upscaleTileCountSelect">
+                <option value="auto" selected>Auto (Hardware Adaptive: 512px / 256px)</option>
+                <option value="4">4 Tiles (2 × 2 Grid)</option>
+                <option value="6">6 Tiles (2 × 3 Grid)</option>
+                <option value="8">8 Tiles (2 × 4 Grid)</option>
+                <option value="9">9 Tiles (3 × 3 Grid)</option>
+                <option value="12">12 Tiles (3 × 4 Grid)</option>
+                <option value="16">16 Tiles (4 × 4 Grid)</option>
+                <option value="custom">Custom Number of Tiles...</option>
+              </select>
+            </div>
+            <div id="upscaleCustomTileCountWrapper" style="display: none; margin-top: 0.4rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-input, rgba(255,255,255,0.03)); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 0.4rem 0.75rem;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Exact Tile Count (2–64):</span>
+                <input type="number" id="upscaleCustomTileCountInput" min="2" max="64" value="4" step="1" style="width: 70px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-bright, #fff); text-align: center; padding: 0.25rem 0.5rem; font-family: var(--font-mono, monospace); font-size: 0.85rem;">
+              </div>
             </div>
           </div>
 
@@ -1429,6 +1534,18 @@
     const upscaleDeviceGroup = document.getElementById('upscaleDeviceGroup');
     const antiDitherGroup = document.getElementById('antiDitherGroup');
     const antiDitherCheckbox = document.getElementById('antiDitherCheckbox');
+    const upscaleTileModeGroup = document.getElementById('upscaleTileModeGroup');
+    const upscaleTileModeSelect = document.getElementById('upscaleTileModeSelect');
+    const upscaleTileCountGroup = document.getElementById('upscaleTileCountGroup');
+    const upscaleTileCountSelect = document.getElementById('upscaleTileCountSelect');
+    const upscaleCustomTileCountWrapper = document.getElementById('upscaleCustomTileCountWrapper');
+    const upscaleCustomTileCountInput = document.getElementById('upscaleCustomTileCountInput');
+    const upscaleModeGroup = document.getElementById('upscaleModeGroup');
+    const regularSharpnessGroup = document.getElementById('regularSharpnessGroup');
+    const regularSharpnessSlider = document.getElementById('regularSharpnessSlider');
+    const sharpnessBadge = document.getElementById('sharpnessBadge');
+    const sharpnessLabelTitle = document.getElementById('sharpnessLabelTitle');
+    const sharpnessLevelText = document.getElementById('sharpnessLevelText');
     const langSelect = document.getElementById('langSelect');
     const processBtn = document.getElementById('processBtn');
     const processBtnText = document.getElementById('processBtnText');
@@ -1455,12 +1572,112 @@
     const hudMetricCrop = document.getElementById('hudMetricCrop');
     const hudMetricUpscale = document.getElementById('hudMetricUpscale');
 
-    upscaleModeSelect.addEventListener('change', () => {
-      const isEnabled = (upscaleModeSelect.value !== 'disabled');
-      upscaleModelGroup.style.display = isEnabled ? 'flex' : 'none';
-      if (upscaleDeviceGroup) upscaleDeviceGroup.style.display = isEnabled ? 'flex' : 'none';
-      if (antiDitherGroup) antiDitherGroup.style.display = isEnabled ? 'flex' : 'none';
-    });
+    let lastUpscaleMode = upscaleModeSelect ? upscaleModeSelect.value : 'auto_1080';
+
+    function updateSharpnessDisplay(val) {
+      if (!sharpnessBadge || !sharpnessLevelText) return;
+      const num = parseFloat(val);
+      if (num <= 0.05) {
+        sharpnessBadge.textContent = '0 (Off)';
+        sharpnessLevelText.textContent = 'Off (Pass-through)';
+      } else {
+        sharpnessBadge.textContent = `${num.toFixed(1)}×`;
+        if (num <= 1.0) sharpnessLevelText.textContent = 'Neutral / Subtle (1.0×)';
+        else if (num < 1.8) sharpnessLevelText.textContent = 'Subtle';
+        else if (num <= 2.2) sharpnessLevelText.textContent = 'Balanced (Recommended)';
+        else if (num < 3.2) sharpnessLevelText.textContent = 'Crisp Outline';
+        else sharpnessLevelText.textContent = 'Maximum Sharpness';
+      }
+    }
+
+    function updateUpscaleVisibility() {
+      const isOriginal = (resSelect && resSelect.value === 'original');
+
+      // Sharpness slider is available across ALL target resolution options
+      if (regularSharpnessGroup) regularSharpnessGroup.style.display = 'flex';
+
+      if (isOriginal) {
+        // When Target Resolution is 'original', switch AI upscale to disabled (Standard OCR)
+        if (upscaleModeSelect) {
+          upscaleModeSelect.value = 'disabled';
+        }
+
+        // Only sharpness, language, and auto-crop options remain visible
+        if (upscaleModeGroup) upscaleModeGroup.style.display = 'none';
+        if (upscaleModelGroup) upscaleModelGroup.style.display = 'none';
+        if (upscaleDeviceGroup) upscaleDeviceGroup.style.display = 'none';
+        if (antiDitherGroup) antiDitherGroup.style.display = 'none';
+        if (upscaleTileModeGroup) upscaleTileModeGroup.style.display = 'none';
+        if (upscaleTileCountGroup) upscaleTileCountGroup.style.display = 'none';
+        if (upscaleCustomTileCountWrapper) upscaleCustomTileCountWrapper.style.display = 'none';
+
+        if (sharpnessLabelTitle) sharpnessLabelTitle.textContent = 'Image Sharpness';
+        return;
+      }
+
+      // Restore AI Super-Resolution group when not 'original'
+      if (upscaleModeGroup) upscaleModeGroup.style.display = 'flex';
+
+      const mode = upscaleModeSelect.value;
+      const isRegular = (mode === 'regular');
+      const isNeural = (mode === 'auto_1080' || mode === 'always' || mode === 'enhanced_1080');
+
+      if (sharpnessLabelTitle) {
+        if (isNeural) sharpnessLabelTitle.textContent = 'Post-AI Sharpness';
+        else if (isRegular) sharpnessLabelTitle.textContent = 'Post-Scale Sharpness';
+        else sharpnessLabelTitle.textContent = 'Image Sharpness';
+      }
+
+      // When mode changes: AI upscaling defaults sharpness to 0, Regular defaults to 2.0
+      if (lastUpscaleMode !== mode) {
+        if (isNeural) {
+          if (regularSharpnessSlider) {
+            regularSharpnessSlider.value = 0;
+            updateSharpnessDisplay(0);
+          }
+        } else if (isRegular) {
+          if (regularSharpnessSlider && parseFloat(regularSharpnessSlider.value) === 0) {
+            regularSharpnessSlider.value = 2.0;
+            updateSharpnessDisplay(2.0);
+          }
+        }
+        lastUpscaleMode = mode;
+      }
+
+      if (upscaleModelGroup) upscaleModelGroup.style.display = isNeural ? 'flex' : 'none';
+      if (upscaleDeviceGroup) upscaleDeviceGroup.style.display = isNeural ? 'flex' : 'none';
+      if (antiDitherGroup) antiDitherGroup.style.display = isNeural ? 'flex' : 'none';
+      if (upscaleTileModeGroup) upscaleTileModeGroup.style.display = isNeural ? 'flex' : 'none';
+
+      const isMulti = (upscaleTileModeSelect && upscaleTileModeSelect.value === 'multi');
+      if (upscaleTileCountGroup) upscaleTileCountGroup.style.display = (isNeural && isMulti) ? 'flex' : 'none';
+      if (upscaleCustomTileCountWrapper) {
+        const isCustom = (upscaleTileCountSelect && upscaleTileCountSelect.value === 'custom');
+        upscaleCustomTileCountWrapper.style.display = (isNeural && isMulti && isCustom) ? 'block' : 'none';
+      }
+    }
+
+    if (regularSharpnessSlider) {
+      regularSharpnessSlider.addEventListener('input', () => {
+        updateSharpnessDisplay(regularSharpnessSlider.value);
+      });
+    }
+
+    resSelect.addEventListener('change', updateUpscaleVisibility);
+    upscaleModeSelect.addEventListener('change', updateUpscaleVisibility);
+    if (upscaleTileModeSelect) {
+      upscaleTileModeSelect.addEventListener('change', updateUpscaleVisibility);
+    }
+    if (upscaleTileCountSelect) {
+      upscaleTileCountSelect.addEventListener('change', () => {
+        if (upscaleCustomTileCountWrapper) {
+          upscaleCustomTileCountWrapper.style.display = (upscaleTileCountSelect.value === 'custom') ? 'block' : 'none';
+        }
+      });
+    }
+
+    updateUpscaleVisibility();
+    updateSharpnessDisplay(regularSharpnessSlider ? regularSharpnessSlider.value : 0);
 
     const statusLabel = document.getElementById('statusLabel');
     const percentLabel = document.getElementById('percentLabel');
@@ -1832,6 +2049,10 @@
       upscaleModelSelect.disabled = true;
       if (upscaleDeviceSelect) upscaleDeviceSelect.disabled = true;
       if (antiDitherCheckbox) antiDitherCheckbox.disabled = true;
+      if (upscaleTileModeSelect) upscaleTileModeSelect.disabled = true;
+      if (upscaleTileCountSelect) upscaleTileCountSelect.disabled = true;
+      if (upscaleCustomTileCountInput) upscaleCustomTileCountInput.disabled = true;
+      if (regularSharpnessSlider) regularSharpnessSlider.disabled = true;
       langSelect.disabled = true;
 
       setEngineState('processing', 'PROCESSING');
@@ -1840,12 +2061,34 @@
       const lang = langSelect.value;
       const targetRes = resSelect.value;
       const autoCrop = cropSelect.value === 'enabled';
-      const upscaleMode = upscaleModeSelect.value;
+      const upscaleMode = (targetRes === 'original') ? 'disabled' : upscaleModeSelect.value;
       const upscaleModel = upscaleModelSelect.value;
       const upscaleDevice = upscaleDeviceSelect ? upscaleDeviceSelect.value : 'gpu';
       const antiDither = antiDitherCheckbox ? antiDitherCheckbox.checked : true;
+      const tileMode = upscaleTileModeSelect ? upscaleTileModeSelect.value : 'multi';
+      const sharpness = regularSharpnessSlider ? regularSharpnessSlider.value : '2.0';
+      let tileCount = 'auto';
+      if (tileMode === 'single') {
+        tileCount = '1';
+      } else if (upscaleTileCountSelect) {
+        if (upscaleTileCountSelect.value === 'custom') {
+          tileCount = (upscaleCustomTileCountInput && upscaleCustomTileCountInput.value) ? upscaleCustomTileCountInput.value : '4';
+        } else {
+          tileCount = upscaleTileCountSelect.value;
+        }
+      }
 
-      log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: ${targetRes}, AI Upscale: ${upscaleMode}, Device: ${upscaleDevice.toUpperCase()}, Healing: ${antiDither ? 'ON' : 'OFF'}]...`, 'INIT');
+      const tileLabel = tileMode === 'single' ? 'Single-Tile' : `Multi-Tile (${tileCount})`;
+      const sharpDisplay = (parseFloat(sharpness) <= 0.05) ? 'Off (0)' : `${sharpness}×`;
+      if (targetRes === 'original') {
+        log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: Original (1:1), Sharpness: ${sharpDisplay}, Auto-Crop: ${autoCrop ? 'ON' : 'OFF'}]...`, 'INIT');
+      } else if (upscaleMode === 'regular') {
+        log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: ${targetRes}, Mode: Regular Upscale (${sharpDisplay} Sharpness)]...`, 'INIT');
+      } else if (upscaleMode === 'disabled') {
+        log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: ${targetRes}, Mode: Standard OCR (${sharpDisplay} Sharpness)]...`, 'INIT');
+      } else {
+        log(`Dispatching ${validImageFiles.length} image(s) [Lang: ${lang}, Res: ${targetRes}, AI Upscale: ${upscaleMode}, Device: ${upscaleDevice.toUpperCase()}, Healing: ${antiDither ? 'ON' : 'OFF'}, Tiling: ${tileLabel}, Sharpness: ${sharpDisplay}]...`, 'INIT');
+      }
       updateProgress(2, `Uploading batch to Python processing engine...`);
 
       const formData = new FormData();
@@ -1856,6 +2099,9 @@
       formData.append('upscale_model', upscaleModel);
       formData.append('upscale_device', upscaleDevice);
       formData.append('anti_dither', antiDither ? 'true' : 'false');
+      formData.append('tile_mode', tileMode);
+      formData.append('tile_count', tileCount);
+      formData.append('sharpness', sharpness);
 
       for (let i = 0; i < validImageFiles.length; i++) {
         formData.append('files', validImageFiles[i], validImageFiles[i].name);
@@ -1967,6 +2213,10 @@
         upscaleModelSelect.disabled = false;
         if (upscaleDeviceSelect) upscaleDeviceSelect.disabled = false;
         if (antiDitherCheckbox) antiDitherCheckbox.disabled = false;
+        if (upscaleTileModeSelect) upscaleTileModeSelect.disabled = false;
+        if (upscaleTileCountSelect) upscaleTileCountSelect.disabled = false;
+        if (upscaleCustomTileCountInput) upscaleCustomTileCountInput.disabled = false;
+        if (regularSharpnessSlider) regularSharpnessSlider.disabled = false;
         langSelect.disabled = false;
       }
     });

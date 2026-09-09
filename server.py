@@ -134,7 +134,10 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
             "upscale_mode": "disabled",
             "upscale_model": "2x_Text2HD",
             "upscale_device": "gpu",
-            "anti_dither": True
+            "anti_dither": True,
+            "tile_mode": "multi",
+            "tile_count": "auto",
+            "sharpness": 2.0
         }
 
         if msg.is_multipart():
@@ -165,6 +168,11 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
                         )
                         if name in ("auto_crop", "anti_dither"):
                             options[name] = (val.lower() in ("true", "1", "enabled", "on"))
+                        elif name == "sharpness":
+                            try:
+                                options[name] = float(val)
+                            except ValueError:
+                                options[name] = 2.0
                         else:
                             options[name] = val
 
@@ -198,15 +206,27 @@ class ChainPDFHandler(SimpleHTTPRequestHandler):
                 def cb(evt):
                     event_q.put(evt)
 
+                target_res_val = options.get("target_res", "1080")
+                upscale_mode_val = "disabled" if target_res_val == "original" else options.get("upscale_mode", "disabled")
+
+                default_sharpness = 0.0 if upscale_mode_val in ("auto_1080", "always", "enhanced_1080") else 2.0
+                try:
+                    sharpness_val = options.get("sharpness", default_sharpness)
+                except (TypeError, ValueError):
+                    sharpness_val = default_sharpness
+
                 pdf_bytes = pipeline.process_batch(
                     images_data=files,
-                    target_res=options.get("target_res", "1080"),
+                    target_res=target_res_val,
                     auto_crop=options.get("auto_crop", True),
                     lang=options.get("lang", "eng"),
-                    upscale_mode=options.get("upscale_mode", "disabled"),
+                    upscale_mode=upscale_mode_val,
                     upscale_model=options.get("upscale_model", "2x_Text2HD"),
                     upscale_device=options.get("upscale_device", "gpu"),
                     anti_dither=options.get("anti_dither", True),
+                    tile_mode=options.get("tile_mode", "multi"),
+                    tile_count=options.get("tile_count", "auto"),
+                    sharpness=sharpness_val,
                     event_callback=cb
                 )
                 TASKS[task_id]["pdf_bytes"] = pdf_bytes

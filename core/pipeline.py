@@ -1,7 +1,7 @@
 import io
 import base64
 from typing import List, Dict, Any, Callable, Optional
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 from .preprocessor import detect_border_crop, get_target_dimensions, adaptive_ink_contrast
 from .ocr_engine import OCREngine
@@ -50,6 +50,9 @@ class DocumentPipeline:
         upscale_model: str = "2x_Text2HD",
         upscale_device: str = "gpu",
         anti_dither: bool = True,
+        tile_mode: str = "multi",
+        tile_count: Any = "auto",
+        sharpness: float = 2.0,
         event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> bytes:
         """
@@ -64,7 +67,14 @@ class DocumentPipeline:
             if event_callback:
                 event_callback({"type": event_type, **data})
 
-        emit("log", {"tag": "INIT", "message": f"Starting Python OCR Engine with {total_pages} page(s) [Lang: {lang}, Res: {target_res}, Upscale: {upscale_mode}, Device: {upscale_device.upper()}]."})
+        tiling_label = "Single-Tile" if tile_mode == "single" else f"Multi-Tile ({tile_count})"
+        if target_res == "original":
+            upscale_label = f"Original (1:1 + {sharpness:.1f}× Sharpness)"
+        elif upscale_mode == "regular":
+            upscale_label = f"Regular (Lanczos + {sharpness:.1f}× Sharpness)"
+        else:
+            upscale_label = f"{upscale_mode} [{upscale_device.upper()}]"
+        emit("log", {"tag": "INIT", "message": f"Starting Python OCR Engine with {total_pages} page(s) [Lang: {lang}, Res: {target_res}, Mode: {upscale_label}]."})
         emit("progress", {"percentage": 2, "label": f"Engine Initialized ({lang}). Preparing document..."})
 
         pdf_builder = PDFBuilder()
@@ -104,62 +114,100 @@ class DocumentPipeline:
                 
                 cropped_img = img.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
 
-                # 2. AI Super-Resolution / Image Enhancement
-                upscaled_base_img = cropped_img
-                was_upscaled = False
-                if upscale_mode and upscale_mode != "disabled":
-                    emit("progress", {
-                        "percentage": (page_frac + (0.15 / total_pages)) * 100,
-                        "label": f"Page {page_num}: AI Enhancing with {upscale_model} [{upscale_device.upper()}]..."
-                    })
+                # 2. Resolution Scaling & Sharpness Enhancement
+                sharpness_val = max(0.0, sharpness)
+                has_sharpness = (sharpness_val > 0.0 and abs(sharpness_val - 1.0) >= 0.01)
 
-                    def up_cb(msg):
-                        emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {msg}"})
-
-                    upscaled_base_img, was_upscaled, up_summary = self.upscaler.enhance(
-                        image=cropped_img,
-                        upscale_mode=upscale_mode,
-                        upscale_model=upscale_model,
-                        upscale_device=upscale_device,
-                        anti_dither=anti_dither,
-                        progress_callback=up_cb
-                    )
-                    emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {up_summary}"})
-
-                # 3. Resolution Scaling
-                cur_w, cur_h = upscaled_base_img.size
-                if upscale_mode == "enhanced_1080":
+                if target_res == "original":
+                    # In 'original' resolution mode, preserve exact cropped dimensions (1:1)
+                    # and apply the configured sharpness filter directly without neural inference
+                    cur_w, cur_h = cropped_img.size
                     target_w, target_h = cur_w, cur_h
-                    visual_img = upscaled_base_img
-                elif was_upscaled and target_res == "original":
-                    # Preserve full neural upscale resolution
-                    target_w, target_h = cur_w, cur_h
-                    visual_img = upscaled_base_img
-                elif was_upscaled and target_res in ("1080", "4k"):
-                    target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
-                    # If target dimensions are smaller than neural output (e.g. 8x NMKD downsampled to 1080p),
-                    # perform high-quality Lanczos downsampling for supersampled anti-aliasing (SSAA)
-                    if (target_w, target_h) != (cur_w, cur_h):
-                        visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    if has_sharpness:
+                        emit("progress", {
+                            "percentage": (page_frac + (0.15 / total_pages)) * 100,
+                            "label": f"Page {page_num}: Applying sharpness filter ({sharpness_val:.1f}×)..."
+                        })
+                        enhancer = ImageEnhance.Sharpness(cropped_img)
+                        visual_img = enhancer.enhance(sharpness_val)
+                        emit("log", {"tag": "SHARP", "message": f"Page {page_num}: Applied {sharpness_val:.1f}× sharpness filter to original image ({target_w}×{target_h})."})
                     else:
-                        visual_img = upscaled_base_img
+                        visual_img = cropped_img
+                    upscale_status_text = f"Original ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Original (1:1)"
                 else:
-                    target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
-                    if (target_w, target_h) != (cur_w, cur_h):
-                        visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                    else:
+                    upscaled_base_img = cropped_img
+                    was_upscaled = False
+                    if upscale_mode and upscale_mode != "disabled":
+                        if upscale_mode == "regular":
+                            emit("progress", {
+                                "percentage": (page_frac + (0.15 / total_pages)) * 100,
+                                "label": f"Page {page_num}: Regular Scaling & Sharpening ({sharpness_val:.1f}×)..."
+                            })
+                        else:
+                            emit("progress", {
+                                "percentage": (page_frac + (0.15 / total_pages)) * 100,
+                                "label": f"Page {page_num}: AI Enhancing with {upscale_model} [{upscale_device.upper()}]..."
+                            })
+
+                        def up_cb(msg):
+                            emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {msg}"})
+
+                        upscaled_base_img, was_upscaled, up_summary = self.upscaler.enhance(
+                            image=cropped_img,
+                            upscale_mode=upscale_mode,
+                            upscale_model=upscale_model,
+                            upscale_device=upscale_device,
+                            anti_dither=anti_dither,
+                            tile_mode=tile_mode,
+                            tile_count=tile_count,
+                            target_res=target_res,
+                            sharpness=sharpness_val,
+                            progress_callback=up_cb
+                        )
+                        emit("log", {"tag": "UPSCALE", "message": f"Page {page_num}: {up_summary}"})
+
+                    # 3. Resolution Scaling
+                    cur_w, cur_h = upscaled_base_img.size
+                    if upscale_mode in ("enhanced_1080", "regular"):
+                        target_w, target_h = cur_w, cur_h
                         visual_img = upscaled_base_img
+                    elif was_upscaled and target_res in ("1080", "4k"):
+                        target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
+                        if (target_w, target_h) != (cur_w, cur_h):
+                            visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                        else:
+                            visual_img = upscaled_base_img
+                    else:
+                        target_w, target_h = get_target_dimensions(cur_w, cur_h, target_res)
+                        if (target_w, target_h) != (cur_w, cur_h):
+                            visual_img = upscaled_base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                        else:
+                            visual_img = upscaled_base_img
 
-                # 4. Emit Visual Preview & Dimensions to Cockpit HUD
+                    # Post-scaling/enhancement sharpness for non-regular modes (regular already sharpened in upscaler)
+                    if upscale_mode != "regular" and has_sharpness:
+                        emit("progress", {
+                            "percentage": (page_frac + (0.18 / total_pages)) * 100,
+                            "label": f"Page {page_num}: Applying post-enhancement sharpness ({sharpness_val:.1f}×)..."
+                        })
+                        enhancer = ImageEnhance.Sharpness(visual_img)
+                        visual_img = enhancer.enhance(sharpness_val)
+                        emit("log", {"tag": "SHARP", "message": f"Page {page_num}: Applied {sharpness_val:.1f}× post-enhancement sharpness filter to {target_w}×{target_h} image."})
+
+                    upscale_status_text = "Bypassed (Clean)"
+                    if upscale_mode == "disabled":
+                        upscale_status_text = f"Disabled ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Disabled"
+                    elif upscale_mode == "regular":
+                        upscale_status_text = f"Regular ({sharpness_val:.1f}× Sharp)" if has_sharpness else "Regular (Lanczos)"
+                    elif was_upscaled:
+                        tiling_tag = "Single-Tile" if tile_mode == "single" else (f"{tile_count}T" if tile_count != "auto" else "AutoT")
+                        sharp_tag = f" + {sharpness_val:.1f}× Sharp" if has_sharpness else ""
+                        upscale_status_text = f"Enhanced ({upscale_model} • {tiling_tag}{sharp_tag})"
+                    elif upscale_mode == "auto_1080":
+                        sharp_tag = f" ({sharpness_val:.1f}× Sharp)" if has_sharpness else ""
+                        upscale_status_text = f"Bypassed (≥1080p){sharp_tag}"
+
                 visual_thumb = image_to_base64_thumbnail(visual_img)
-                upscale_status_text = "Bypassed (Clean)"
-                if upscale_mode == "disabled":
-                    upscale_status_text = "Disabled"
-                elif was_upscaled:
-                    upscale_status_text = f"Enhanced ({upscale_model})"
-                elif upscale_mode == "auto_1080":
-                    upscale_status_text = "Bypassed (≥1080p)"
-
                 emit("telemetry", {
                     "page_num": page_num,
                     "total_pages": total_pages,

@@ -152,26 +152,41 @@ You can configure the AI upscaling behavior directly in the cockpit HUD:
 
 - **Auto Upscale (< 1080p only) [Recommended Default]**:
   Intelligently checks input resolution against 1080p boundaries ($1920 \times 1080$ landscape or $1080 \times 1920$ portrait). If a page already meets or exceeds 1080p, neural upscaling is bypassed to save time and compute. Only sub-1080p pages are routed to the model.
-- **Regular Upscale (Always Upscale All Pages)**:
-  Forces neural enhancement on every ingested page regardless of resolution.
+- **Regular Upscale (Fast Scaling + Sharpness Slider)**:
+  Uses CPU-native algorithmic scaling (Lanczos resampling) combined with the configurable sharpness slider (default $2.0\times$). Hides deep learning model, tiling, and GPU controls to provide fast scaling and crisp font edge enhancement without AI hallucination or GPU memory usage.
+- **Universal Sharpness Control (All Resolutions & AI Modes)**:
+  The **Image / Post-Scale Sharpness Slider** ($0$ to $4.0\times$) is available across **all target resolution options** (Original, 720p, 1080p, 4K):
+  - **AI Upscaling Modes**: Automatically defaults to **`0` (`0 (Off)`)** to preserve pure neural restoration without introducing artificial haloing or over-sharpening, while giving you complete freedom to increase post-AI sharpness if desired.
+  - **Original (No Resizing)**: Retains exact 1:1 original dimensions while allowing you to apply selective edge sharpening to faded scans.
+  - **Regular Upscale**: Defaults to recommended **`2.0×`** for crisp character strokes.
+- **Always Neural Upscale (All Pages)**:
+  Forces deep learning neural model enhancement on every ingested page regardless of input resolution.
 - **Enhanced 1080p (4K Neural Super-Sampling to 1080p)**:
-  Upscales the input into the $4\text{K}$ neural domain ($3840 \times 2160$), allowing the neural model to hallucinate crisp stroke geometry and eliminate blur. The enhanced image is then supersampled back down to $1080\text{p}$ using high-fidelity Lanczos resampling. This produces razor-sharp, anti-aliased character edges without bloating final PDF file size.
+  Upscales the input into the $4\text{K}$ neural domain ($3840 \times 2160$), allowing the neural model to reconstruct crisp stroke geometry and eliminate blur. The enhanced image is then supersampled back down to $1080\text{p}$ using high-fidelity Lanczos resampling.
 - **Disabled (Standard OCR)**:
-  Passes raw/cropped images directly to Tesseract without deep learning overhead.
+  Passes raw/cropped images directly to Tesseract without deep learning overhead (with optional sharpness filter if requested).
 
 ### Hardware Acceleration & Device Selection
 
 - **GPU (NVIDIA CUDA Acceleration)**: Uses PyTorch CUDA 12.4 with automatic GPU memory release (`torch.cuda.empty_cache()`) between passes. Achieves multi-megapixel inference in sub-second to low-second times.
 - **CPU (Multi-Threaded Host Processor)**: Seamless fallback when no NVIDIA GPU or CUDA runtime is present. Automatically adjusts tile sizes to ensure smooth execution on standard multi-core processors.
 
-### Seamless Tiled Inference & VRAM Safety
+### Tiling Modes & Selectable Tile Count
 
-To prevent Out-Of-Memory (OOM) errors on large high-DPI scans, the upscaler dynamically splits images into overlapping tiles:
-- **Tile Dimensions**: $512\text{px}$ on CUDA GPU, $256\text{px}$ on CPU.
-- **Overlap Padding**: $24\text{px}$ (GPU) / $16\text{px}$ (CPU).
-- **2D Linear Feathering Window**:
-  $$\text{Window}_y = \text{linspace}(0.01, 1.0, \text{pad}) \quad\times\quad \text{Window}_x = \text{linspace}(0.01, 1.0, \text{pad})$$
-  Adjacent tiles are smoothly blended together in tensor memory, eliminating visible grid seam artifacts across document text blocks.
+To accommodate varying hardware capabilities, image resolutions, and quality preferences, ChainPDF provides configurable tiling execution:
+
+- **Single-Tile Pass (Full Frame / 1 Tile)**:
+  Feeds the entire page into the neural network in a single direct forward pass. This ensures 100% global coherence, zero boundary seam risk, and the fastest possible inference when sufficient VRAM is present (recommended for modern GPUs with 8GB+ VRAM).
+  - **Automated OOM Safety Fallback**: If a large scan triggers a `CUDA Out Of Memory` event in single-tile mode, the engine automatically catches the error, releases GPU cache memory, and transparently falls back to multi-tile inference without failing the batch job.
+- **Multi-Tile Pass (Overlapping Blended Tiles) [Default]**:
+  Partitions high-resolution scans into overlapping feathered tiles to keep VRAM footprint low and prevent memory crashes:
+  - **Tile Count / Grid Selection**:
+    - **Auto (Hardware Adaptive)**: Uses optimal tile dimensions ($512\text{px}$ on GPU, $256\text{px}$ on CPU).
+    - **Preset Grids**: Select exact splits like `4 Tiles (2 × 2)`, `6 Tiles (2 × 3 / 3 × 2)`, `8 Tiles`, `9 Tiles (3 × 3)`, `12 Tiles`, or `16 Tiles (4 × 4)`. The engine automatically factors the image dimensions to yield balanced, square-proportioned tiles.
+    - **Custom Number of Tiles**: Specify any target tile count between $2$ and $64$.
+  - **2D Linear Feathering Window**:
+    $$\text{Window}_y = \text{linspace}(0.01, 1.0, \text{pad}) \quad\times\quad \text{Window}_x = \text{linspace}(0.01, 1.0, \text{pad})$$
+    Overlapping tile boundaries are smoothly blended in tensor memory, eliminating visible grid seam artifacts across document text blocks.
 
 ### Sub-Pixel Ink Hole Healing (Anti-Dither)
 
